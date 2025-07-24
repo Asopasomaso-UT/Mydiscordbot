@@ -3,7 +3,7 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 module.exports = {
   data: new SlashCommandBuilder()
 		.setName('janken')
-		.setDescription('じゃんけんぽん！！！'),
+		.setDescription('じゃんけんぽん！！'),
 	
 		async execute(interaction) {
 		const filter = response => {
