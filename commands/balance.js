@@ -1,6 +1,4 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
-const { QuickMongo } = require('quickmongo');
-const mongo = new QuickMongo(process.env.MONGO_URI);
 
 module.exports = {
     data: new SlashCommandBuilder()
