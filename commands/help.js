@@ -8,20 +8,22 @@ module.exports = {
     async execute(interaction) {
         const helpEmbed = new EmbedBuilder()
             .setTitle('📖 めぐみんBot 使い方ガイド')
-            .setDescription('サーバー内通貨とミニゲームが楽しめるBotです！\nチャットをすると少しずつコインが貯まります。')
+            .setDescription('サーバー内通貨とショップ機能を楽しめるBotです！\nチャットをすると少しずつコインが貯まります。')
             .setColor('LuminousVividPink')
             .addFields(
-                { name: '💰 通貨システム', value: 
-                    '• `/balance` - 所持金を確認します（相手を選べばその人の残高も！）\n' +
-                    '• `/pay` - 他の人にコインを送ります\n' +
-                    '• `/add-money` - 【管理者】コインを付与/没収します' 
+                { name: '💰 通貨・お財布', value: 
+                    '• `/balance` - 自分の所持金（または他人の残高）を確認します\n' +
+                    '• `/pay` - 他の人にコインを送ります' 
+                },
+                { name: '🛒 ショップ・持ち物', value: 
+                    '• `/shop` - 貯めたコインでロールやアイテムを購入します\n' +
+                    '• `/inventory` - 自分が持っているアイテムを確認します' 
                 },
                 { name: '🎮 ミニゲーム', value: 
-                    '• `/janken` - めぐみんとじゃんけんをします' 
+                    '• `/janken` - めぐみんとじゃんけんをして遊びます' 
                 },
-                { name: 'ℹ️ その他', value: 
-                    '• `/ping` - Botの反応速度を確認します\n' +
-                    '• `/help` - このメニューを表示します' 
+                { name: '🛠️ 管理者専用', value: 
+                    '• `/add-money` - 特定のユーザーにコインを付与/没収します' 
                 }
             )
             .setFooter({ text: '素敵なDiscordライフを！', iconURL: interaction.client.user.displayAvatarURL() })
