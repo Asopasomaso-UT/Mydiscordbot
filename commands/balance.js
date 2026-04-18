@@ -1,7 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { QuickMongo } = require('quickmongo');
-
-// MONGO_URI は Railway の Variables から読み込まれます
 const mongo = new QuickMongo(process.env.MONGO_URI);
 
 module.exports = {
