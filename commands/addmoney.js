@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const mongoose = require('mongoose');
 
-// Mongoose スキーマ定義
+// スキーマ定義
 const dataSchema = new mongoose.Schema({
     id: String,
     value: mongoose.Schema.Types.Mixed
@@ -28,32 +28,25 @@ module.exports = {
         ),
 
     async execute(interaction) {
-        // 1. 応答を保留する（3秒ルール回避）
+        // ★最速で保留応答を返す
         await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
         const { guild } = interaction;
         const targetUser = interaction.options.getUser('target');
         const amount = interaction.options.getInteger('amount');
-        
         const dbKey = `money_${guild.id}_${targetUser.id}`;
 
         try {
-            // MongoDB 接続確認
-            if (mongoose.connection.readyState !== 1) {
-                await mongoose.connect(process.env.MONGO_URI);
-            }
+            // MongoDB の接続チェックは main.js に任せて削除
 
-            // 2. 現在の残高を取得して計算
-            const record = await DataModel.findOne({ id: dbKey });
-            const currentBalance = record ? (Number(record.value) || 0) : 0;
-            const newBalance = currentBalance + amount;
-
-            // 3. データベースを更新
-            await DataModel.findOneAndUpdate(
+            // $inc を使い、1回の通信で「加算」と「結果取得」を同時に行う
+            const record = await DataModel.findOneAndUpdate(
                 { id: dbKey },
-                { value: newBalance },
-                { upsert: true }
+                { $inc: { value: amount } }, // value を amount 分増やす
+                { upsert: true, new: true }   // なければ作成し、更新後のデータを返す
             );
+
+            const newBalance = record.value || 0;
 
             const embed = new EmbedBuilder()
                 .setTitle('💰 コイン付与完了')
@@ -62,12 +55,12 @@ module.exports = {
                 .setColor('Green')
                 .setTimestamp();
 
-            // 4. deferReply しているので editReply で送信
             await interaction.editReply({ embeds: [embed] });
 
         } catch (error) {
             console.error('Addmoney Error:', error);
-            await interaction.editReply({ content: 'データの付与中にエラーが発生しました。' });
+            // deferReply 済みなので editReply でエラー通知
+            await interaction.editReply({ content: 'コインの付与処理中にエラーが発生しました。' });
         }
     },
 };

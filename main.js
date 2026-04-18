@@ -4,6 +4,7 @@ require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
 
+// --- 1. Bot クライアントの初期化 ---
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -16,18 +17,18 @@ const client = new Client({
 
 client.commands = new Collection();
 
-// 1. MongoDB 接続関数 (起動時に1回だけ実行)
+// --- 2. MongoDB 接続関数 ---
 async function connectDatabase() {
     try {
         await mongoose.connect(process.env.MONGO_URI);
         console.log("✅ MongoDB (Mongoose) に接続完了！");
     } catch (err) {
         console.error("❌ MongoDB 接続エラー:", err);
-        process.exit(1); // 接続できなければ終了
+        process.exit(1);
     }
 }
 
-// 2. コマンド読み込み
+// --- 3. コマンド・イベントの読み込み ---
 const slashcommandsPath = path.join(__dirname, 'commands');
 const slashcommandFiles = fs.readdirSync(slashcommandsPath).filter(file => file.endsWith('.js'));
 
@@ -37,7 +38,6 @@ for (const file of slashcommandFiles) {
     client.commands.set(command.data.name, command);
 }
 
-// 3. イベント読み込み (eventsフォルダ内のInteractionCreateなどはここを通る)
 const eventsPath = path.join(__dirname, 'events');
 const eventsFiles = fs.readdirSync(eventsPath).filter(file => file.endsWith('.js'));
 
@@ -51,34 +51,51 @@ for (const file of eventsFiles) {
     }
 }
 
-// 4. スラッシュコマンド実行処理
+// --- 4. スラッシュコマンド実行処理 (ここがエラー回避の肝) ---
 client.on(Events.InteractionCreate, async interaction => {
+    // スラッシュコマンド以外は無視
     if (!interaction.isChatInputCommand()) return;
 
     const command = client.commands.get(interaction.commandName);
     if (!command) return;
 
     try {
-        // 各コマンドファイル側の execute を呼び出す
+        /**
+         * 【重要】
+         * ここで interaction.deferReply() を書いてはいけません。
+         * 各コマンド (ranking.js, janken.js など) の冒頭にある deferReply と
+         * 衝突して 40060 エラーが発生するためです。
+         */
         await command.execute(interaction);
-    } catch (error) {
-        console.error("⚠️ Command Execution Error:", error);
-        const errorContent = { content: 'コマンド実行中にエラーが発生しました。', flags: [MessageFlags.Ephemeral] };
         
-        if (interaction.deferred || interaction.replied) {
-            await interaction.followUp(errorContent).catch(() => {});
-        } else {
-            await interaction.reply(errorContent).catch(() => {});
+    } catch (error) {
+        console.error(`⚠️ コマンド実行エラー [${interaction.commandName}]:`, error);
+
+        // エラー発生時、まだ返信（または保留）をしていなければ返信する
+        const errorMsg = { content: 'コマンドの実行中にエラーが発生しました。', flags: [MessageFlags.Ephemeral] };
+        
+        try {
+            if (interaction.deferred || interaction.replied) {
+                await interaction.followUp(errorMsg);
+            } else {
+                await interaction.reply(errorMsg);
+            }
+        } catch (e) {
+            // Discordとの通信が完全に切れている場合は何もしない
         }
     }
 });
 
-// 5. データベースに接続してから Bot をログインさせる
+// --- 5. 起動プロセス ---
 async function init() {
+    // データベースに繋いでからログイン
     await connectDatabase();
-    require("./deploy-commands.js"); // コマンド登録
+    
+    // スラッシュコマンドの登録 (deploy-commands.js)
+    require("./deploy-commands.js");
+    
     client.login(process.env.TOKEN);
-    console.log("🚀 サーバー起動プロセス完了");
+    console.log("🚀 めぐみんBot 起動中...");
 }
 
 init();
