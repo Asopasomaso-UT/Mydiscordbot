@@ -1,36 +1,57 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const { QuickMongo } = require('quickmongo');
+
+// MONGO_URI は Railway の Variables から読み込まれます
+const mongo = new QuickMongo(process.env.MONGO_URI);
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('inventory')
+        .setName('inventry') // ※コマンド名は小文字である必要があります
         .setDescription('自分の持ち物を確認します'),
 
     async execute(interaction) {
-        const { client, user, guild } = interaction;
-        const invKey = `items_${guild.id}_${user.id}`;
-        const inventory = await client.db.get(invKey) || [];
+        // 1. 最初に「考え中...」状態を作る（3秒ルールを回避）
+        // 修正ポイント: flags を使用して警告を回避
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
-        const embed = new EmbedBuilder()
-            .setTitle(`🎒 ${user.username} の持ち物`)
-            .setColor('Blue');
+        try {
+            // 2. データベースからデータを取得
+            // interaction.user.id を使ってユーザーごとのデータを特定
+            const inventory = await mongo.get(`inventory_${interaction.user.id}`);
 
-        if (inventory.length === 0) {
-            embed.setDescription('持ち物は空っぽです。');
-        } else {
-            // 【重要】個数をカウントする処理
-            const itemCounts = {};
-            inventory.forEach(itemName => {
-                itemCounts[itemName] = (itemCounts[itemName] || 0) + 1;
+            // 持ち物データがない場合の処理
+            if (!inventory || inventory.length === 0) {
+                return await interaction.editReply({
+                    content: '持ち物は何もありません。'
+                });
+            }
+
+            // 3. 表示用のエンベッドを作成
+            const embed = new EmbedBuilder()
+                .setTitle(`${interaction.user.username}のインベントリ`)
+                .setColor(0x00AE86)
+                .setTimestamp();
+
+            // ここでは inventory が配列であることを想定した例です
+            // あなたのDB構造に合わせて調整してください
+            const itemList = Array.isArray(inventory) 
+                ? inventory.join('\n') 
+                : 'データ形式が正しくありません。';
+
+            embed.setDescription(itemList);
+
+            // 4. editReply で結果を表示
+            await interaction.editReply({
+                embeds: [embed]
             });
 
-            // 「アイテム名 × 個数」の形式に変換
-            const listText = Object.entries(itemCounts)
-                .map(([name, count]) => `・**${name}** × ${count}`)
-                .join('\n');
-
-            embed.setDescription(listText);
+        } catch (error) {
+            console.error('Inventory Error:', error);
+            
+            // エラー時も editReply で通知
+            await interaction.editReply({
+                content: 'データの取得中にエラーが発生しました。'
+            });
         }
-
-        await interaction.reply({ embeds: [embed] });
     },
 };

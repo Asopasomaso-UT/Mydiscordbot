@@ -1,4 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { QuickMongo } = require('quickmongo');
+
+// MONGO_URI は Railway の Variables から読み込まれます
+const mongo = new QuickMongo(process.env.MONGO_URI);
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -12,6 +16,9 @@ module.exports = {
         ),
 
     async execute(interaction) {
+        
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+        
         const { client, guild } = interaction;
 
         // 指定されたユーザーを取得。いなければコマンドを打った本人にする
