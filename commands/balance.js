@@ -1,38 +1,61 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+// 1. MessageFlags を忘れずにインポート
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const mongoose = require('mongoose');
+
+// 2. Mongoose スキーマ定義 (QuickMongoのデータを読み込む設定)
+const dataSchema = new mongoose.Schema({
+    id: String,
+    value: mongoose.Schema.Types.Mixed
+}, { collection: 'quickmongo' });
+
+const DataModel = mongoose.models.QuickData || mongoose.model('QuickData', dataSchema);
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('balance')
         .setDescription('所持コインを確認します')
-        // ユーザーを選択できるオプションを追加
         .addUserOption(option => 
             option.setName('target')
                 .setDescription('確認したいユーザーを選択（空欄なら自分）')
-                .setRequired(false) // 必須にしないことで、自分の確認も楽になる
+                .setRequired(false)
         ),
 
     async execute(interaction) {
-        
+        // 3. deferReply を使用し、flags を正しく設定
         await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
         
-        const { client, guild } = interaction;
+        const { guild } = interaction;
 
-        // 指定されたユーザーを取得。いなければコマンドを打った本人にする
-        const targetUser = interaction.options.getUser('target') || interaction.user;
-        
-        // データベース用のキー
-        const dbKey = `money_${guild.id}_${targetUser.id}`;
+        try {
+            // MongoDB 接続確認
+            if (mongoose.connection.readyState !== 1) {
+                await mongoose.connect(process.env.MONGO_URI);
+            }
 
-        // データの取得
-        const balance = await client.db.get(dbKey) || 0;
+            const targetUser = interaction.options.getUser('target') || interaction.user;
+            
+            // QuickMongoが使用していたキーの形式に合わせる
+            // ※以前のコードが `money_${guild.id}_${targetUser.id}` だった場合
+            const dbKey = `money_${guild.id}_${targetUser.id}`;
 
-        const embed = new EmbedBuilder()
-            .setTitle(`${targetUser.username} のお財布`)
-            .setDescription(`現在の所持金: **${balance.toLocaleString()}** コイン 💰`)
-            .setColor(targetUser.id === interaction.user.id ? 'Gold' : 'Blue') // 自分なら金、人なら青
-            .setThumbnail(targetUser.displayAvatarURL())
-            .setTimestamp();
+            // 4. Mongoose でデータを取得
+            const result = await DataModel.findOne({ id: dbKey });
+            const balance = result ? (Number(result.value) || 0) : 0;
 
-        await interaction.reply({ embeds: [embed] });
+            const embed = new EmbedBuilder()
+                .setTitle(`${targetUser.username} のお財布`)
+                .setDescription(`現在の所持金: **${balance.toLocaleString()}** コイン 💰`)
+                .setColor(targetUser.id === interaction.user.id ? 'Gold' : 'Blue')
+                .setThumbnail(targetUser.displayAvatarURL())
+                .setTimestamp();
+
+            // 5. 重要：deferReply の後は reply ではなく editReply を使う
+            await interaction.editReply({ embeds: [embed] });
+
+        } catch (error) {
+            console.error('Balance Command Error:', error);
+            // エラー時も editReply
+            await interaction.editReply({ content: 'データの取得中にエラーが発生しました。' });
+        }
     },
 };

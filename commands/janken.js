@@ -1,4 +1,13 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const mongoose = require('mongoose');
+
+// Mongoose スキーマ定義
+const dataSchema = new mongoose.Schema({
+    id: String,
+    value: mongoose.Schema.Types.Mixed
+}, { collection: 'quickmongo' });
+
+const DataModel = mongoose.models.QuickData || mongoose.model('QuickData', dataSchema);
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -15,6 +24,9 @@ module.exports = {
                 )),
 
     async execute(interaction) {
+        // 1. 最初に「考え中」を作る (3秒制限を回避)
+        await interaction.deferReply();
+
         const userChoice = interaction.options.getString('手');
         const choices = ['ぐー', 'ちょき', 'ぱー'];
         const botChoice = choices[Math.floor(Math.random() * choices.length)];
@@ -37,18 +49,38 @@ module.exports = {
             .setColor(result === '勝ち！' ? 'Yellow' : 'Red')
             .setTimestamp();
 
-        // 勝利時の報酬処理
-        if (result === '勝ち！') {
-            const reward = Math.floor(Math.random() * (200 - 1 + 1)) + 100;
-            const dbKey = `money_${interaction.guild.id}_${interaction.user.id}`;
-            
-            await interaction.client.db.add(dbKey, reward);
+        try {
+            // MongoDB 接続確認
+            if (mongoose.connection.readyState !== 1) {
+                await mongoose.connect(process.env.MONGO_URI);
+            }
 
-            embed.setDescription(`あなたの出し手: **${userChoice}**\nわたしの出し手: **${botChoice}**\n結果: **${result}**\n\n💰 **${reward}** コインを手に入れました！`);
-        } else {
-            embed.setDescription(`あなたの出し手: **${userChoice}**\nわたしの出し手: **${botChoice}**\n結果: **${result}**`);
+            if (result === '勝ち！') {
+                const reward = Math.floor(Math.random() * (200 - 100 + 1)) + 100;
+                const dbKey = `money_${interaction.guild.id}_${interaction.user.id}`;
+
+                // --- Mongoose で金額を加算する処理 ---
+                const record = await DataModel.findOne({ id: dbKey });
+                const currentBalance = record ? Number(record.value) || 0 : 0;
+                const newBalance = currentBalance + reward;
+
+                await DataModel.findOneAndUpdate(
+                    { id: dbKey },
+                    { value: newBalance },
+                    { upsert: true }
+                );
+
+                embed.setDescription(`あなたの出し手: **${userChoice}**\nわたしの出し手: **${botChoice}**\n結果: **${result}**\n\n💰 **${reward}** コインを手に入れました！\n現在の残高: **${newBalance}**`);
+            } else {
+                embed.setDescription(`あなたの出し手: **${userChoice}**\nわたしの出し手: **${botChoice}**\n結果: **${result}**`);
+            }
+
+            // 2. deferReply しているので最後は editReply にする
+            await interaction.editReply({ embeds: [embed] });
+
+        } catch (error) {
+            console.error(error);
+            await interaction.editReply('データの更新中にエラーが発生しました。');
         }
-
-        await interaction.reply({ embeds: [embed] });
     },
 };
