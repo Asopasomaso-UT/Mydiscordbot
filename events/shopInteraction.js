@@ -1,3 +1,23 @@
+// ... (中略)
+const itemId = interaction.values[0];
+const item = ITEMS[itemId];
+
+// --- 追加：販売期間外チェック ---
+const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Tokyo"}));
+const dayOfWeek = now.getDay();
+const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+let isAvailable = false;
+const avail = item.availability;
+if (!avail || avail.type === 'daily') isAvailable = true;
+else if (avail.type === 'weekly' && avail.day === dayOfWeek) isAvailable = true;
+else if (avail.type === 'weekend' && (dayOfWeek === 0 || dayOfWeek === 6)) isAvailable = true;
+else if (avail.type === 'date' && avail.date === monthDay) isAvailable = true;
+
+if (!isAvailable) {
+    return await interaction.reply({ content: '申し訳ありません、その商品は現在は販売期間外です。', ephemeral: true });
+}
+
 const { Events } = require('discord.js');
 const { ITEMS } = require('../commands/shop.js');
 

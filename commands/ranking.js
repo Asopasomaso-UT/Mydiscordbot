@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -8,55 +8,84 @@ module.exports = {
     async execute(interaction) {
         const { client, guild } = interaction;
 
-        // 1. データベースからすべてのデータを取得
-        // quick.dbの全データから、このサーバーのmoneyに関連するものだけを抽出
+        // 1. データ取得と並べ替え
         const allData = await client.db.all();
-        
-        // 2. このサーバーのデータだけをフィルタリングして整形
-        // キーの形式が "money_サーバーID_ユーザーID" になっているので、それを目印にする
         const guildPrefix = `money_${guild.id}_`;
         
         let leaderboard = allData
             .filter(data => data.id.startsWith(guildPrefix))
-            .map(data => {
-                return {
-                    userId: data.id.replace(guildPrefix, ''),
-                    balance: data.value
-                };
+            .map(data => ({
+                userId: data.id.replace(guildPrefix, ''),
+                balance: data.value
+            }))
+            .sort((a, b) => b.balance - a.balance);
+
+        if (leaderboard.length === 0) return interaction.reply('データがありません。');
+
+        // 2. ページ作成用の関数
+        const generateEmbed = async (page) => {
+            const start = page * 25;
+            const end = start + 25;
+            const currentItems = leaderboard.slice(start, end);
+
+            let description = "";
+            for (let i = 0; i < currentItems.length; i++) {
+                const rank = start + i + 1;
+                const user = await client.users.fetch(currentItems[i].userId).catch(() => null);
+                const userName = user ? user.username : "不明なユーザー";
+                
+                let rankText = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `**${rank}.**`;
+                description += `${rankText} ${userName} \`(${currentItems[i].balance.toLocaleString()}💰)\`\n`;
+            }
+
+            return new EmbedBuilder()
+                .setTitle(`🏆 ${guild.name} 所持金ランキング`)
+                .setDescription(description || "このページにはデータがありません。")
+                .setColor('Gold')
+                .setFooter({ text: `ページ ${page + 1} / 2 (あなたの順位: ${leaderboard.findIndex(u => u.userId === interaction.user.id) + 1}位)` });
+        };
+
+        // 3. ボタンの作成
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('prev').setLabel('前の25人').setStyle(ButtonStyle.Primary).setDisabled(true),
+            new ButtonBuilder().setCustomId('next').setLabel('次の25人').setStyle(ButtonStyle.Primary).setDisabled(leaderboard.length <= 25)
+        );
+
+        // 4. 初期表示
+        let currentPage = 0;
+        const response = await interaction.reply({
+            embeds: [await generateEmbed(currentPage)],
+            components: [row]
+        });
+
+        // 5. ボタン入力を受け付ける（コレクター）
+        const collector = response.createMessageComponentCollector({
+            componentType: ComponentType.Button,
+            time: 60000 // 1分間受け付ける
+        });
+
+        collector.on('collect', async (i) => {
+            // コマンドを打った本人以外は操作できないようにする
+            if (i.user.id !== interaction.user.id) return i.reply({ content: '自分のランキング画面で操作してください。', ephemeral: true });
+
+            if (i.customId === 'next') currentPage++;
+            else if (i.customId === 'prev') currentPage--;
+
+            // ボタンの有効・無効状態を更新
+            const updateRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('prev').setLabel('前の25人').setStyle(ButtonStyle.Primary).setDisabled(currentPage === 0),
+                new ButtonBuilder().setCustomId('next').setLabel('次の25人').setStyle(ButtonStyle.Primary).setDisabled(currentPage === 1 || leaderboard.length <= (currentPage + 1) * 25)
+            );
+
+            await i.update({
+                embeds: [await generateEmbed(currentPage)],
+                components: [updateRow]
             });
+        });
 
-        // 3. 所持金が多い順に並べ替え
-        leaderboard.sort((a, b) => b.balance - a.balance);
-
-        // 4. 上位10名だけを抽出
-        const top10 = leaderboard.slice(0, 10);
-
-        if (top10.length === 0) {
-            return await interaction.reply('まだランキングに載るデータがありません。');
-        }
-
-        // 5. 表示用のテキストを作成
-        let description = "";
-        for (let i = 0; i < top10.length; i++) {
-            const user = await client.users.fetch(top10[i].userId).catch(() => null);
-            const userName = user ? user.username : "不明なユーザー";
-            
-            // 順位に応じた絵文字
-            let rankEmoji = "";
-            if (i === 0) rankEmoji = "🥇";
-            else if (i === 1) rankEmoji = "🥈";
-            else if (i === 2) rankEmoji = "🥉";
-            else rankEmoji = `${i + 1}位.`;
-
-            description += `${rankEmoji} **${userName}**: ${top10[i].balance.toLocaleString()} コイン\n`;
-        }
-
-        const embed = new EmbedBuilder()
-            .setTitle(`🏆 ${guild.name} 所持金ランキング`)
-            .setDescription(description)
-            .setColor('Gold')
-            .setTimestamp();
-
-        await interaction.reply({ embeds: [embed] });
+        collector.on('end', () => {
+            // 時間切れになったらボタンを消す
+            interaction.editReply({ components: [] }).catch(() => null);
+        });
     },
 };
