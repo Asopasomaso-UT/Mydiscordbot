@@ -66,7 +66,7 @@ module.exports = {
         // --- 3. 埋め込みメッセージ作成 ---
         const weekNames = ['日', '月', '火', '水', '木', '金', '土'];
         const embed = new EmbedBuilder()
-            .setTitle('🛒 限定ショップ')
+            .setTitle('🛒 アソパショップ')
             .setDescription(`本日のラインナップです！\n今日は **${weekNames[dayOfWeek]}曜日 (${monthDay})** です。`)
             .setColor('Green')
             .setTimestamp();
