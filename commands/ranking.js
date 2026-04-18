@@ -1,4 +1,8 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags } = require('discord.js');
+const { QuickMongo } = require('quickmongo');
+
+// データベース接続
+const mongo = new QuickMongo(process.env.MONGO_URI);
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -6,86 +10,103 @@ module.exports = {
         .setDescription('サーバー内の所持金ランキングを表示します'),
 
     async execute(interaction) {
+        // 1. タイムアウト防止（DB取得に時間がかかる可能性があるため必須）
+        await interaction.deferReply();
+
         const { client, guild } = interaction;
 
-        // 1. データ取得と並べ替え
-        const allData = await client.db.fetchall();
-        const guildPrefix = `money_${guild.id}_`;
-        
-        let leaderboard = allData
-            .filter(data => data.id.startsWith(guildPrefix))
-            .map(data => ({
-                userId: data.id.replace(guildPrefix, ''),
-                balance: data.value
-            }))
-            .sort((a, b) => b.balance - a.balance);
+        try {
+            // 2. データ取得（quickmongo v5 の全データ取得メソッドを確認）
+            // 注意: QuickMongoに.fetchall()がない場合は .all() を試してください
+            const allData = await mongo.all(); 
+            const guildPrefix = `money_${guild.id}_`;
+            
+            let leaderboard = allData
+                .filter(data => data.id.startsWith(guildPrefix))
+                .map(data => ({
+                    userId: data.id.replace(guildPrefix, ''),
+                    balance: data.value
+                }))
+                .sort((a, b) => b.balance - a.balance);
 
-        if (leaderboard.length === 0) return interaction.reply('データがありません。');
-
-        // 2. ページ作成用の関数
-        const generateEmbed = async (page) => {
-            const start = page * 25;
-            const end = start + 25;
-            const currentItems = leaderboard.slice(start, end);
-
-            let description = "";
-            for (let i = 0; i < currentItems.length; i++) {
-                const rank = start + i + 1;
-                const user = await client.users.fetch(currentItems[i].userId).catch(() => null);
-                const userName = user ? user.username : "不明なユーザー";
-                
-                let rankText = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `**${rank}.**`;
-                description += `${rankText} ${userName} \`(${currentItems[i].balance.toLocaleString()}💰)\`\n`;
+            if (leaderboard.length === 0) {
+                return await interaction.editReply('ランキングデータがありません。');
             }
 
-            return new EmbedBuilder()
-                .setTitle(`🏆 ${guild.name} 所持金ランキング`)
-                .setDescription(description || "このページにはデータがありません。")
-                .setColor('Gold')
-                .setFooter({ text: `ページ ${page + 1} / 2 (あなたの順位: ${leaderboard.findIndex(u => u.userId === interaction.user.id) + 1}位)` });
-        };
+            // 3. ページ作成用の関数
+            const generateEmbed = async (page) => {
+                const start = page * 10; // 25人だとEmbed制限(4096文字)に引っかかる可能性があるため10-15人が安全
+                const end = start + 10;
+                const currentItems = leaderboard.slice(start, end);
 
-        // 3. ボタンの作成
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('prev').setLabel('前の25人').setStyle(ButtonStyle.Primary).setDisabled(true),
-            new ButtonBuilder().setCustomId('next').setLabel('次の25人').setStyle(ButtonStyle.Primary).setDisabled(leaderboard.length <= 25)
-        );
+                let description = "";
+                for (let i = 0; i < currentItems.length; i++) {
+                    const rank = start + i + 1;
+                    // fetch ではなく cache を優先し、なければ fetch する（高速化）
+                    const user = client.users.cache.get(currentItems[i].userId) || await client.users.fetch(currentItems[i].userId).catch(() => null);
+                    const userName = user ? user.username : "不明なユーザー";
+                    
+                    let rankText = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `**${rank}.**`;
+                    description += `${rankText} ${userName} \`(${currentItems[i].balance.toLocaleString()}💰)\`\n`;
+                }
 
-        // 4. 初期表示
-        let currentPage = 0;
-        const response = await interaction.reply({
-            embeds: [await generateEmbed(currentPage)],
-            components: [row]
-        });
+                const totalPages = Math.ceil(leaderboard.length / 10);
+                const userRank = leaderboard.findIndex(u => u.userId === interaction.user.id) + 1;
 
-        // 5. ボタン入力を受け付ける（コレクター）
-        const collector = response.createMessageComponentCollector({
-            componentType: ComponentType.Button,
-            time: 60000 // 1分間受け付ける
-        });
+                return new EmbedBuilder()
+                    .setTitle(`🏆 ${guild.name} 所持金ランキング`)
+                    .setDescription(description || "データがありません。")
+                    .setColor('Gold')
+                    .setFooter({ text: `ページ ${page + 1} / ${totalPages} (あなたの順位: ${userRank > 0 ? userRank + '位' : '圏外'})` });
+            };
 
-        collector.on('collect', async (i) => {
-            // コマンドを打った本人以外は操作できないようにする
-            if (i.user.id !== interaction.user.id) return i.reply({ content: '自分のランキング画面で操作してください。', ephemeral: true });
-
-            if (i.customId === 'next') currentPage++;
-            else if (i.customId === 'prev') currentPage--;
-
-            // ボタンの有効・無効状態を更新
-            const updateRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('prev').setLabel('前の25人').setStyle(ButtonStyle.Primary).setDisabled(currentPage === 0),
-                new ButtonBuilder().setCustomId('next').setLabel('次の25人').setStyle(ButtonStyle.Primary).setDisabled(currentPage === 1 || leaderboard.length <= (currentPage + 1) * 25)
+            // 4. 初期表示
+            let currentPage = 0;
+            const embed = await generateEmbed(currentPage);
+            
+            const row = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('prev').setLabel('前へ').setStyle(ButtonStyle.Primary).setDisabled(true),
+                new ButtonBuilder().setCustomId('next').setLabel('次へ').setStyle(ButtonStyle.Primary).setDisabled(leaderboard.length <= 10)
             );
 
-            await i.update({
-                embeds: [await generateEmbed(currentPage)],
-                components: [updateRow]
+            const response = await interaction.editReply({
+                embeds: [embed],
+                components: [row]
             });
-        });
 
-        collector.on('end', () => {
-            // 時間切れになったらボタンを消す
-            interaction.editReply({ components: [] }).catch(() => null);
-        });
+            // 5. ボタンコレクター
+            const collector = response.createMessageComponentCollector({
+                componentType: ComponentType.Button,
+                time: 60000
+            });
+
+            collector.on('collect', async (i) => {
+                if (i.user.id !== interaction.user.id) {
+                    return i.reply({ content: '自分の操作画面ではありません。', flags: [MessageFlags.Ephemeral] });
+                }
+
+                if (i.customId === 'next') currentPage++;
+                else if (i.customId === 'prev') currentPage--;
+
+                const totalPages = Math.ceil(leaderboard.length / 10);
+                const updateRow = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('prev').setLabel('前へ').setStyle(ButtonStyle.Primary).setDisabled(currentPage === 0),
+                    new ButtonBuilder().setCustomId('next').setLabel('次へ').setStyle(ButtonStyle.Primary).setDisabled(currentPage >= totalPages - 1)
+                );
+
+                await i.update({
+                    embeds: [await generateEmbed(currentPage)],
+                    components: [updateRow]
+                });
+            });
+
+            collector.on('end', () => {
+                interaction.editReply({ components: [] }).catch(() => null);
+            });
+
+        } catch (error) {
+            console.error(error);
+            await interaction.editReply('ランキングの読み込み中にエラーが発生しました。');
+        }
     },
 };
