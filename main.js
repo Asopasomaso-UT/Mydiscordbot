@@ -13,8 +13,23 @@ const client = new Client({
 require('dotenv').config();
 const fs = require('node:fs');
 const path = require('node:path');
-const { QuickDB } = require("quick.db");
-const db = new QuickDB(); 
+const { Database } = require('quickmongo'); 
+
+// ... (clientの設定など)
+
+// MongoDBに接続
+// 第1引数にMongoDBの接続文字列、第2引数（任意）にオプションを入れます
+const db = new Database("mongodb+srv://xzdcn305_db_user:LletIxHe67fofiIs@cluster0.xi1v4yj.mongodb.net/?appName=Cluster0");
+
+(async () => {
+    try {
+        await db.connect();
+        console.log("MongoDBに接続完了！");
+        client.db = db; // これで今まで通り client.db.set() などが使えます
+    } catch (err) {
+        console.error("MongoDB接続エラー:", err);
+    }
+})();
 
 client.db = db;
 

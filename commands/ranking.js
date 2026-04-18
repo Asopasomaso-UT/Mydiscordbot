@@ -9,7 +9,7 @@ module.exports = {
         const { client, guild } = interaction;
 
         // 1. データ取得と並べ替え
-        const allData = await client.db.all();
+        const allData = await client.db.fetchall();
         const guildPrefix = `money_${guild.id}_`;
         
         let leaderboard = allData
