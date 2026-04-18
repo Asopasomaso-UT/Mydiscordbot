@@ -3,9 +3,19 @@ const { ITEMS } = require('../commands/shop.js');
 
 module.exports = {
     name: Events.InteractionCreate,
-    // ここに必ず "async" が必要です！
     async execute(interaction) {
-        // セレクトメニューのIDチェック
+        // --- 1. ボタン処理 (ショップを閉じる) ---
+        if (interaction.isButton()) {
+            if (interaction.customId === 'shop_close') {
+                // コマンド実行者本人か確認 (他人に消されるのを防ぐ)
+                if (interaction.user.id !== interaction.message.interaction.user.id) {
+                    return await interaction.reply({ content: '自分のショップ画面しか閉じられません。', ephemeral: true });
+                }
+                return await interaction.message.delete().catch(() => null);
+            }
+        }
+
+        // --- 2. セレクトメニュー処理 (購入) ---
         if (!interaction.isStringSelectMenu() || interaction.customId !== 'shop_buy') return;
 
         const itemId = interaction.values[0];
@@ -14,7 +24,7 @@ module.exports = {
 
         if (!item) return;
 
-        // --- 1. 販売期間外チェック (ここでも await を使う可能性があるため async 関数内である必要がある) ---
+        // 販売期間外チェック
         const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
         const dayOfWeek = now.getDay();
         const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -27,26 +37,20 @@ module.exports = {
         else if (avail.type === 'date' && avail.date === monthDay) isAvailable = true;
 
         if (!isAvailable) {
-            return await interaction.reply({ content: '申し訳ありません、その商品は現在は販売期間外です。', ephemeral: true });
+            return await interaction.reply({ content: 'この商品は現在は販売期間外です。', ephemeral: true });
         }
 
-        // --- 2. データベース準備 ---
         const moneyKey = `money_${guild.id}_${user.id}`;
         const invKey = `items_${guild.id}_${user.id}`;
-
-        // ここで await を使うので、execute の前に async が必須
         const balance = await client.db.get(moneyKey) || 0;
         let inventory = await client.db.get(invKey) || [];
 
-        // --- 3. 所持金チェック ---
+        // 所持金不足
         if (balance < item.price) {
-            return await interaction.reply({ 
-                content: `コインが足りません！ (所持: ${balance.toLocaleString()} / 必要: ${item.price.toLocaleString()})`, 
-                ephemeral: true 
-            });
+            return await interaction.reply({ content: `コインが足りません！`, ephemeral: true });
         }
 
-        // --- 4. ユニーク(1回限り)商品のチェック ---
+        // 重複チェック
         if (item.unique) {
             if (item.type === 'role' && member.roles.cache.has(item.roleId)) {
                 return await interaction.reply({ content: '既にその役職を持っています。', ephemeral: true });
@@ -56,10 +60,8 @@ module.exports = {
             }
         }
 
-        // --- 5. 購入確定処理 ---
         try {
             await client.db.sub(moneyKey, item.price);
-
             if (item.type === 'role') {
                 await member.roles.add(item.roleId);
             } else {
@@ -68,12 +70,12 @@ module.exports = {
             }
 
             await interaction.reply({ 
-                content: `💸 **${item.name}** を購入しました！\n残高: **${(balance - item.price).toLocaleString()}** コイン`, 
+                content: `💸 **${item.name}** を購入しました！`, 
                 ephemeral: true 
             });
         } catch (error) {
             console.error(error);
-            await interaction.reply({ content: 'エラーが発生しました。Botの権限を確認してください。', ephemeral: true });
+            await interaction.reply({ content: '購入エラーが発生しました。', ephemeral: true });
         }
     },
 };
