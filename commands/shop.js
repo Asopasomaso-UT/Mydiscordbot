@@ -17,7 +17,7 @@ const ITEMS = {
         availability: { type: 'weekly', day: 1 } 
     },
     'weekend_charm': { 
-        name: '週末', 
+        name: '週末の至高のひととき', 
         price: 2000, 
         type: 'item', 
         unique: true, 
