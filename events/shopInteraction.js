@@ -1,5 +1,14 @@
-const { Events } = require('discord.js');
+const { Events, MessageFlags } = require('discord.js');
+const mongoose = require('mongoose');
 const { ITEMS } = require('../commands/shop.js');
+
+// Mongoose スキーマ定義
+const dataSchema = new mongoose.Schema({
+    id: String,
+    value: mongoose.Schema.Types.Mixed
+}, { collection: 'quickmongo' });
+
+const DataModel = mongoose.models.QuickData || mongoose.model('QuickData', dataSchema);
 
 module.exports = {
     name: Events.InteractionCreate,
@@ -7,9 +16,10 @@ module.exports = {
         // --- 1. ボタン処理 (ショップを閉じる) ---
         if (interaction.isButton()) {
             if (interaction.customId === 'shop_close') {
-                // コマンド実行者本人か確認 (他人に消されるのを防ぐ)
-                if (interaction.user.id !== interaction.message.interaction.user.id) {
-                    return await interaction.reply({ content: '自分のショップ画面しか閉じられません。', ephemeral: true });
+                // コマンド実行者本人か確認
+                const originalUser = interaction.message.interaction?.user;
+                if (originalUser && interaction.user.id !== originalUser.id) {
+                    return await interaction.reply({ content: '自分のショップ画面しか閉じられません。', flags: [MessageFlags.Ephemeral] });
                 }
                 return await interaction.message.delete().catch(() => null);
             }
@@ -18,13 +28,16 @@ module.exports = {
         // --- 2. セレクトメニュー処理 (購入) ---
         if (!interaction.isStringSelectMenu() || interaction.customId !== 'shop_buy') return;
 
+        // 応答を保留する (処理が長引く可能性があるため)
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
         const itemId = interaction.values[0];
         const item = ITEMS[itemId];
-        const { client, user, guild, member } = interaction;
+        const { user, guild, member } = interaction;
 
-        if (!item) return;
+        if (!item) return await interaction.editReply({ content: '商品データが見つかりません。' });
 
-        // 販売期間外チェック
+        // 販売期間外チェック (日本時間)
         const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
         const dayOfWeek = now.getDay();
         const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -37,45 +50,67 @@ module.exports = {
         else if (avail.type === 'date' && avail.date === monthDay) isAvailable = true;
 
         if (!isAvailable) {
-            return await interaction.reply({ content: 'この商品は現在は販売期間外です。', ephemeral: true });
+            return await interaction.editReply({ content: 'この商品は現在は販売期間外です。' });
         }
 
         const moneyKey = `money_${guild.id}_${user.id}`;
         const invKey = `items_${guild.id}_${user.id}`;
-        const balance = await client.db.get(moneyKey) || 0;
-        let inventory = await client.db.get(invKey) || [];
-
-        // 所持金不足
-        if (balance < item.price) {
-            return await interaction.reply({ content: `コインが足りません！`, ephemeral: true });
-        }
-
-        // 重複チェック
-        if (item.unique) {
-            if (item.type === 'role' && member.roles.cache.has(item.roleId)) {
-                return await interaction.reply({ content: '既にその役職を持っています。', ephemeral: true });
-            }
-            if (item.type === 'item' && inventory.includes(item.name)) {
-                return await interaction.reply({ content: 'そのアイテムは既に持っています。', ephemeral: true });
-            }
-        }
 
         try {
-            await client.db.sub(moneyKey, item.price);
+            // MongoDB 接続確認
+            if (mongoose.connection.readyState !== 1) {
+                await mongoose.connect(process.env.MONGO_URI);
+            }
+
+            // データ取得
+            const moneyRecord = await DataModel.findOne({ id: moneyKey });
+            const balance = moneyRecord ? (Number(moneyRecord.value) || 0) : 0;
+
+            const invRecord = await DataModel.findOne({ id: invKey });
+            let inventory = invRecord ? (Array.isArray(invRecord.value) ? invRecord.value : []) : [];
+
+            // 所持金不足
+            if (balance < item.price) {
+                return await interaction.editReply({ content: `コインが足りません！ (必要: ${item.price} / 所持: ${balance})` });
+            }
+
+            // 重複チェック
+            if (item.unique) {
+                if (item.type === 'role' && member.roles.cache.has(item.roleId)) {
+                    return await interaction.editReply({ content: '既にその役職を持っています。' });
+                }
+                if (item.type === 'item' && inventory.includes(item.name)) {
+                    return await interaction.editReply({ content: 'そのアイテムは既に持っています。' });
+                }
+            }
+
+            // 購入処理
+            // 1. お金を引く
+            await DataModel.findOneAndUpdate(
+                { id: moneyKey },
+                { $inc: { value: -item.price } },
+                { upsert: true }
+            );
+
+            // 2. アイテム/役職付与
             if (item.type === 'role') {
                 await member.roles.add(item.roleId);
             } else {
                 inventory.push(item.name);
-                await client.db.set(invKey, inventory);
+                await DataModel.findOneAndUpdate(
+                    { id: invKey },
+                    { value: inventory },
+                    { upsert: true }
+                );
             }
 
-            await interaction.reply({ 
-                content: `💸 **${item.name}** を購入しました！`, 
-                ephemeral: true 
+            await interaction.editReply({ 
+                content: `💸 **${item.name}** を購入しました！`
             });
+
         } catch (error) {
-            console.error(error);
-            await interaction.reply({ content: '購入エラーが発生しました。', ephemeral: true });
+            console.error('Shop Interaction Error:', error);
+            await interaction.editReply({ content: '購入処理中にエラーが発生しました。' });
         }
     },
 };

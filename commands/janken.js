@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const mongoose = require('mongoose');
 
-// Mongoose スキーマ定義
 const dataSchema = new mongoose.Schema({
     id: String,
     value: mongoose.Schema.Types.Mixed
@@ -24,7 +23,7 @@ module.exports = {
                 )),
 
     async execute(interaction) {
-        // 1. 最初に「考え中」を作る (3秒制限を回避)
+        // ★最優先: 即座に保留応答を返す（3秒ルールの回避）
         await interaction.deferReply();
 
         const userChoice = interaction.options.getString('手');
@@ -50,32 +49,24 @@ module.exports = {
             .setTimestamp();
 
         try {
-            // MongoDB 接続確認
-            if (mongoose.connection.readyState !== 1) {
-                await mongoose.connect(process.env.MONGO_URI);
-            }
-
+            // main.js で接続済みなので、ここではチェックを省いて即座にDB操作
             if (result === '勝ち！') {
                 const reward = Math.floor(Math.random() * (200 - 100 + 1)) + 100;
                 const dbKey = `money_${interaction.guild.id}_${interaction.user.id}`;
 
-                // --- Mongoose で金額を加算する処理 ---
-                const record = await DataModel.findOne({ id: dbKey });
-                const currentBalance = record ? Number(record.value) || 0 : 0;
-                const newBalance = currentBalance + reward;
-
-                await DataModel.findOneAndUpdate(
+                // 金額を加算
+                const record = await DataModel.findOneAndUpdate(
                     { id: dbKey },
-                    { value: newBalance },
-                    { upsert: true }
+                    { $inc: { value: reward } }, // 直接加算することで処理を高速化
+                    { upsert: true, new: true }
                 );
 
-                embed.setDescription(`あなたの出し手: **${userChoice}**\nわたしの出し手: **${botChoice}**\n結果: **${result}**\n\n💰 **${reward}** コインを手に入れました！\n現在の残高: **${newBalance}**`);
+                embed.setDescription(`あなたの手: **${userChoice}**\nわたしの手: **${botChoice}**\n結果: **${result}**\n\n💰 **${reward}** コイン獲得！\n現在の残高: **${record.value}**`);
             } else {
-                embed.setDescription(`あなたの出し手: **${userChoice}**\nわたしの出し手: **${botChoice}**\n結果: **${result}**`);
+                embed.setDescription(`あなたの手: **${userChoice}**\nわたしの手: **${botChoice}**\n結果: **${result}**`);
             }
 
-            // 2. deferReply しているので最後は editReply にする
+            // 最後に応答を更新
             await interaction.editReply({ embeds: [embed] });
 
         } catch (error) {
