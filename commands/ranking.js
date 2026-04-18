@@ -1,8 +1,14 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ComponentType, MessageFlags } = require('discord.js');
-const { QuickMongo } = require('quickmongo');
+const mongoose = require('mongoose');
 
-// データベース接続
-const mongo = new QuickMongo(process.env.MONGO_URI);
+// MongoDBのデータ構造（スキーマ）を定義
+// これを一度作っておけば、他のコマンドでも使い回せます
+const DataSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    value: { type: mongoose.Schema.Types.Mixed }
+});
+// 既にモデルがある場合はそれを使い、なければ作る
+const DataModel = mongoose.models.Data || mongoose.model('Data', DataSchema);
 
 module.exports = {
     data: new SlashCommandBuilder()

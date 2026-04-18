@@ -1,9 +1,14 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
-const { QuickMongo } = require('quickmongo');
+const mongoose = require('mongoose');
 
-// データベース接続（RailwayのVariablesから読み込み）
-// v5では { QuickMongo } としてインポートし、new QuickMongo() する必要があります
-const mongo = new QuickMongo(process.env.MONGO_URI);
+// MongoDBのデータ構造（スキーマ）を定義
+// これを一度作っておけば、他のコマンドでも使い回せます
+const DataSchema = new mongoose.Schema({
+    key: { type: String, required: true, unique: true },
+    value: { type: mongoose.Schema.Types.Mixed }
+});
+// 既にモデルがある場合はそれを使い、なければ作る
+const DataModel = mongoose.models.Data || mongoose.model('Data', DataSchema);
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -11,39 +16,32 @@ module.exports = {
         .setDescription('自分の持ち物を確認します'),
 
     async execute(interaction) {
-        // 1. タイムアウト（3秒ルール）を回避
-        // flags を使って最新の書き方に修正 (ephemeral の警告を消す)
         await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
         try {
-            // 2. データベースの準備（接続確認）
-            if (!mongo.connected) {
-                await mongo.connect();
+            // データベースに接続（まだの場合のみ）
+            if (mongoose.connection.readyState !== 1) {
+                await mongoose.connect(process.env.MONGO_URI);
             }
 
-            // 3. データの取得
-            // ユーザーIDに基づいたキーで取得
-            const inventory = await mongo.get(`inventory_${interaction.user.id}`);
+            // QuickMongoの「inventory_ID」というキーに合わせて検索
+            const targetKey = `inventory_${interaction.user.id}`;
+            const data = await DataModel.findOne({ key: targetKey });
 
-            // 4. データがない場合
-            if (!inventory || (Array.isArray(inventory) && inventory.length === 0)) {
-                return await interaction.editReply({
-                    content: '持ち物は何もありません。'
-                });
+            if (!data || !data.value) {
+                return await interaction.editReply('持ち物は何もありません。');
             }
 
-            // 5. 表示用エンベッドの作成
+            const inventory = data.value;
+
             const embed = new EmbedBuilder()
                 .setTitle(`🎒 ${interaction.user.username} のインベントリ`)
-                .setColor(0x00AE86)
-                .setTimestamp();
+                .setColor(0x00AE86);
 
-            // データが配列の場合と文字列の場合、両方に対応
             let itemList = "";
             if (Array.isArray(inventory)) {
                 itemList = inventory.join('\n');
             } else if (typeof inventory === 'object') {
-                // オブジェクト（アイテム名: 個数）形式の場合
                 itemList = Object.entries(inventory)
                     .map(([name, count]) => `・**${name}**: ${count}個`)
                     .join('\n');
@@ -51,20 +49,12 @@ module.exports = {
                 itemList = String(inventory);
             }
 
-            embed.setDescription(itemList || "表示できるアイテムがありません。");
-
-            // 6. 結果を返信 (deferReplyしているので editReply)
-            await interaction.editReply({
-                embeds: [embed]
-            });
+            embed.setDescription(itemList || "中身が空です。");
+            await interaction.editReply({ embeds: [embed] });
 
         } catch (error) {
-            console.error('Inventory Error:', error);
-            
-            // エラー時もユーザーに通知
-            await interaction.editReply({
-                content: 'データの取得中にエラーが発生しました。データベースの設定を確認してください。'
-            });
+            console.error(error);
+            await interaction.editReply('エラーが発生しました。');
         }
     },
 };
