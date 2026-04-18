@@ -1,36 +1,11 @@
-// ... (中略)
-const itemId = interaction.values[0];
-const item = ITEMS[itemId];
-
-// --- 追加：販売期間外チェック ---
-const now = new Date(new Date().toLocaleString("en-US", {timeZone: "Asia/Tokyo"}));
-const dayOfWeek = now.getDay();
-const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-let isAvailable = false;
-const avail = item.availability;
-if (!avail || avail.type === 'daily') isAvailable = true;
-else if (avail.type === 'weekly' && avail.day === dayOfWeek) isAvailable = true;
-else if (avail.type === 'weekend' && (dayOfWeek === 0 || dayOfWeek === 6)) isAvailable = true;
-else if (avail.type === 'date' && avail.date === monthDay) isAvailable = true;
-
-if (!isAvailable) {
-    return await interaction.reply({ content: '申し訳ありません、その商品は現在は販売期間外です。', ephemeral: true });
-}
-
 const { Events } = require('discord.js');
 const { ITEMS } = require('../commands/shop.js');
 
 module.exports = {
     name: Events.InteractionCreate,
+    // ここに必ず "async" が必要です！
     async execute(interaction) {
-        // --- ショップを閉じるボタンの処理 ---
-        if (interaction.isButton() && interaction.customId === 'shop_close') {
-            // メッセージを削除する
-            return await interaction.message.delete();
-        }
-
-        // --- 商品購入（セレクトメニュー）の処理 ---
+        // セレクトメニューのIDチェック
         if (!interaction.isStringSelectMenu() || interaction.customId !== 'shop_buy') return;
 
         const itemId = interaction.values[0];
@@ -39,13 +14,31 @@ module.exports = {
 
         if (!item) return;
 
+        // --- 1. 販売期間外チェック (ここでも await を使う可能性があるため async 関数内である必要がある) ---
+        const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
+        const dayOfWeek = now.getDay();
+        const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+        let isAvailable = false;
+        const avail = item.availability;
+        if (!avail || avail.type === 'daily') isAvailable = true;
+        else if (avail.type === 'weekly' && avail.day === dayOfWeek) isAvailable = true;
+        else if (avail.type === 'weekend' && (dayOfWeek === 0 || dayOfWeek === 6)) isAvailable = true;
+        else if (avail.type === 'date' && avail.date === monthDay) isAvailable = true;
+
+        if (!isAvailable) {
+            return await interaction.reply({ content: '申し訳ありません、その商品は現在は販売期間外です。', ephemeral: true });
+        }
+
+        // --- 2. データベース準備 ---
         const moneyKey = `money_${guild.id}_${user.id}`;
         const invKey = `items_${guild.id}_${user.id}`;
 
+        // ここで await を使うので、execute の前に async が必須
         const balance = await client.db.get(moneyKey) || 0;
         let inventory = await client.db.get(invKey) || [];
 
-        // 所持金チェック
+        // --- 3. 所持金チェック ---
         if (balance < item.price) {
             return await interaction.reply({ 
                 content: `コインが足りません！ (所持: ${balance.toLocaleString()} / 必要: ${item.price.toLocaleString()})`, 
@@ -53,19 +46,19 @@ module.exports = {
             });
         }
 
-        // 重複チェック
+        // --- 4. ユニーク(1回限り)商品のチェック ---
         if (item.unique) {
             if (item.type === 'role' && member.roles.cache.has(item.roleId)) {
-                return await interaction.reply({ content: `既に持っています！`, ephemeral: true });
+                return await interaction.reply({ content: '既にその役職を持っています。', ephemeral: true });
             }
             if (item.type === 'item' && inventory.includes(item.name)) {
-                return await interaction.reply({ content: `そのアイテムは1つしか所持できません。`, ephemeral: true });
+                return await interaction.reply({ content: 'そのアイテムは既に持っています。', ephemeral: true });
             }
         }
 
+        // --- 5. 購入確定処理 ---
         try {
             await client.db.sub(moneyKey, item.price);
-            const newBalance = balance - item.price;
 
             if (item.type === 'role') {
                 await member.roles.add(item.roleId);
@@ -74,18 +67,13 @@ module.exports = {
                 await client.db.set(invKey, inventory);
             }
 
-            // 購入成功を通知（ephemeral: true で本人にだけ見せる）
             await interaction.reply({ 
-                content: `💸 **${item.name}** を購入しました！\n新しい残高: **${newBalance.toLocaleString()}** コイン`, 
+                content: `💸 **${item.name}** を購入しました！\n残高: **${(balance - item.price).toLocaleString()}** コイン`, 
                 ephemeral: true 
             });
-
-            // 【おまけ】元のショップ画面の残高表示も更新したい場合は、interaction.message.edit を使いますが、
-            // 誰でも触れる画面だと他の人の残高が表示されてしまうため、購入通知だけで留めるのが安全です。
-
         } catch (error) {
             console.error(error);
-            await interaction.reply({ content: 'エラーが発生しました。', ephemeral: true });
+            await interaction.reply({ content: 'エラーが発生しました。Botの権限を確認してください。', ephemeral: true });
         }
     },
 };
