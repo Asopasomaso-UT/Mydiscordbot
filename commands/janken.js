@@ -39,7 +39,7 @@ module.exports = {
 
         // 勝利時の報酬処理
         if (result === '勝ち！') {
-            const reward = Math.floor(Math.random() * (500 - 100 + 1)) + 100;
+            const reward = Math.floor(Math.random() * (200 - 1 + 1)) + 100;
             const dbKey = `money_${interaction.guild.id}_${interaction.user.id}`;
             
             await interaction.client.db.add(dbKey, reward);
