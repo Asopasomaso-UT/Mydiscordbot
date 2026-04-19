@@ -44,6 +44,13 @@ const ITEMS = {
     availability: { type: 'daily' },
     desc: '強化失敗時のレベルダウンを防ぐ(1回消費)'
     },
+    'rare_candy': {
+    name: '不思議なあめ',
+    price: 150000, // 少し高めの設定
+    type: 'item', 
+    availability: { type: 'daily' },
+    desc: '食べるとレベルが1上がります。',
+    },
 };
 
 module.exports = {
