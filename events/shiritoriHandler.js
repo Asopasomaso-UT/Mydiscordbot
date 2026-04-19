@@ -9,7 +9,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // 【重要】apiVersion: 'v1' を明示的に指定して、安定版エンドポイントに繋ぎます
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash"
+    model: "models/gemini-1.5-flash" // "models/" を頭に付ける
 }, { apiVersion: 'v1' });
 
 const dataSchema = mongoose.models.QuickData?.schema || new mongoose.Schema({
