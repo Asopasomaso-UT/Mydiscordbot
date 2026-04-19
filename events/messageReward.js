@@ -2,7 +2,7 @@ const { Events } = require('discord.js');
 const mongoose = require('mongoose');
 
 // Mongoose スキーマ定義
-const dataSchema = new mongoose.Schema({
+const dataSchema = mongoose.models.QuickData?.schema || new mongoose.Schema({
     id: String,
     value: mongoose.Schema.Types.Mixed
 }, { collection: 'quickmongo' });
@@ -17,22 +17,30 @@ module.exports = {
         if (message.author.bot || !message.guild || message.content.startsWith('/')) return;
 
         const { author, guild } = message;
-        const dbKey = `money_${guild.id}_${author.id}`;
+        const moneyKey = `money_${guild.id}_${author.id}`;
+        const totalEarnedKey = `total_earned_${guild.id}_${author.id}`; // 累計額用キー
 
         try {
-            // MongoDB 接続確認（念のため）
+            // MongoDB 接続確認
             if (mongoose.connection.readyState !== 1) {
                 await mongoose.connect(process.env.MONGO_URI);
             }
 
-            // $inc を使うことで、今の値に「10」を直接加算できます（Mongooseの便利な機能）
+            // 1. 【所持金】の更新（10コイン加算）
             await DataModel.findOneAndUpdate(
-                { id: dbKey },
-                { $inc: { value: 10 } }, // value フィールドを 10 増やす
-                { upsert: true, new: true } // データがなければ作成する
+                { id: moneyKey },
+                { $inc: { value: 10 } },
+                { upsert: true, returnDocument: 'after' }
             );
 
-            // console.log(`${author.tag} に10コイン付与しました`);
+            // 2. 【累計獲得額】の更新（10コイン加算）
+            // これによりメッセージ送信分もランキングに反映されます
+            await DataModel.findOneAndUpdate(
+                { id: totalEarnedKey },
+                { $inc: { value: 10 } },
+                { upsert: true, returnDocument: 'after' }
+            );
+
         } catch (error) {
             console.error('コイン付与エラー:', error);
         }

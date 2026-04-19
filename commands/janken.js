@@ -1,8 +1,8 @@
-const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const mongoose = require('mongoose');
 
 // スキーマ定義
-const dataSchema = new mongoose.Schema({
+const dataSchema = mongoose.models.QuickData?.schema || new mongoose.Schema({
     id: String,
     value: mongoose.Schema.Types.Mixed
 }, { collection: 'quickmongo' });
@@ -29,27 +29,30 @@ module.exports = {
                 .setMinValue(1)),
 
     async execute(interaction) {
-        // 1. 保留応答
         await interaction.deferReply();
 
         const userChoice = interaction.options.getString('手');
         const bet = interaction.options.getInteger('bet');
-        const dbKey = `money_${interaction.guild.id}_${interaction.user.id}`;
+        const guildId = interaction.guild.id;
+        const userId = interaction.user.id;
+
+        const moneyKey = `money_${guildId}_${userId}`;
+        const totalEarnedKey = `total_earned_${guildId}_${userId}`; // 累計額用キー
 
         try {
             // 2. 現在の所持金を確認
-            const userData = await DataModel.findOne({ id: dbKey });
+            const userData = await DataModel.findOne({ id: moneyKey });
             const currentMoney = userData ? (Number(userData.value) || 0) : 0;
 
             if (currentMoney < bet) {
-                return await interaction.editReply(`コインが足りません！ (現在の所持金: ${currentMoney} 💰)`);
+                return await interaction.editReply(`コインが足りません！ (現在の所持金: ${currentMoney.toLocaleString()} 💰)`);
             }
 
             // 3. じゃんけんの判定
             const choices = ['ぐー', 'ちょき', 'ぱー'];
             const botChoice = choices[Math.floor(Math.random() * choices.length)];
 
-            let result = ''; // 'win', 'draw', 'lose'
+            let result = ''; 
             if (userChoice === botChoice) {
                 result = 'draw';
             } else if (
@@ -64,32 +67,43 @@ module.exports = {
 
             // 4. 倍率計算とDB更新
             let changeAmount = 0;
+            let earnedAmount = 0; // 今回の「純粋な利益」
             let resultMessage = "";
             let color = "Grey";
 
             if (result === 'win') {
-                // 勝ったら3倍（賭け金を引いてから3倍を加算 = 実質 +2倍）
-                changeAmount = bet * 2; 
+                // 勝ったら3倍（+2倍の純利）
+                earnedAmount = bet * 2; 
+                changeAmount = earnedAmount;
                 resultMessage = `🎉 **勝利！** 賭け金が **3倍** になりました！`;
                 color = "Gold";
             } else if (result === 'draw') {
-                // あいこは1倍（増減なし）
                 changeAmount = 0;
                 resultMessage = `⚖️ **あいこ！** 賭け金がそのまま戻ってきました。`;
                 color = "Blue";
             } else {
-                // 負けたら0倍（全額没収）
                 changeAmount = -bet;
                 resultMessage = `💀 **敗北…** 賭け金は没収されました。`;
                 color = "Red";
             }
 
-            // DB更新
+            // --- DB更新処理 ---
+            
+            // 1. 所持金の更新
             const updatedRecord = await DataModel.findOneAndUpdate(
-                { id: dbKey },
+                { id: moneyKey },
                 { $inc: { value: changeAmount } },
-                { upsert: true, new: true }
+                { upsert: true, returnDocument: 'after' }
             );
+
+            // 2. 累計獲得額の更新（勝ったときのみ加算）
+            if (earnedAmount > 0) {
+                await DataModel.findOneAndUpdate(
+                    { id: totalEarnedKey },
+                    { $inc: { value: earnedAmount } },
+                    { upsert: true, returnDocument: 'after' }
+                );
+            }
 
             // 5. 結果表示
             const embed = new EmbedBuilder()
