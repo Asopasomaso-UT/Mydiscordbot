@@ -70,4 +70,10 @@ const EGG_CONFIG = {
     'mythic_egg': { label: 'Mythic Egg', price: 200000, rates: { 'Legendary': 40, 'Mythic': 59.999, 'Secret': 0.001 } }
 };
 
-module.exports = { PET_MASTER, EGG_CONFIG };
+const EVOLUTION_STAGES = [
+    { name: '', color: null, multiplier: 1 },         // Level 0 (通常)
+    { name: 'Golden', color: 0xFFD700, multiplier: 2 }, // Level 1
+    { name: 'Shiny', color: 0xE6E6FA, multiplier: 4 },  // Level 2
+    { name: 'Neon', color: 0x00FFFF, multiplier: 8 }   // Level 3 (最大)
+];
+module.exports = { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES };
