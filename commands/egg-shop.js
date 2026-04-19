@@ -4,7 +4,6 @@ const { EGG_CONFIG } = require('../utils/Pet-data');
 
 const DataModel = mongoose.models.QuickData;
 
-// 表示用絵文字（お好みで変更してください）
 const EGG_EMOJI = {
     'common_egg': '🥚',
     'uncommon_egg': '🟢',
@@ -26,11 +25,19 @@ module.exports = {
         const invKey = `pet_data_${guildId}_${userId}`;
         const now = Date.now();
 
-        // 1. 在庫の更新チェック（30分経過でリセット）
         let shopData = await DataModel.findOne({ id: shopKey });
+        
+        // 1. 在庫の更新チェック（30分経過 or データなし）
         if (!shopData || (now - shopData.value.lastUpdate) > 1800000) {
             const keys = Object.keys(EGG_CONFIG);
-            const newStock = keys.sort(() => 0.5 - Math.random()).slice(0, 3);
+            const newStock = [];
+            
+            // 重複を許容して3つ選ぶ
+            for (let i = 0; i < 3; i++) {
+                const randomEgg = keys[Math.floor(Math.random() * keys.length)];
+                newStock.push(randomEgg);
+            }
+
             shopData = await DataModel.findOneAndUpdate(
                 { id: shopKey },
                 { value: { stock: newStock, lastUpdate: now } },
@@ -39,30 +46,31 @@ module.exports = {
         }
 
         const currentStock = shopData.value.stock;
-
-        // 2. ショップ画面構築
         const embed = new EmbedBuilder()
-            .setTitle('🏪 期間限定・卵ショップ')
-            .setDescription('ラインナップは30分ごとに更新されます。')
+            .setTitle('🏪 卵ショップ')
+            .setDescription('30分ごとにランナップが変わります。同じ卵が複数並ぶこともあります！')
             .setColor('LuminousVividPink')
             .setFooter({ text: '次回の入荷' })
             .setTimestamp(shopData.value.lastUpdate + 1800000);
 
         const row = new ActionRowBuilder();
 
-        currentStock.forEach((eggKey) => {
+        // 2. ボタンとフィールドの作成
+        currentStock.forEach((eggKey, index) => {
             const egg = EGG_CONFIG[eggKey];
             const emoji = EGG_EMOJI[eggKey] || '🥚';
+            
             embed.addFields({ 
-                name: `${emoji} ${egg.label}`, 
+                name: `枠 ${index + 1}: ${emoji} ${egg.label}`, 
                 value: `価格: ${egg.price.toLocaleString()} 💰`, 
                 inline: true 
             });
             
+            // CustomIdに index を含めることで、同じ卵が並んでもボタンを区別できるようにする
             row.addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`buy_${eggKey}`)
-                    .setLabel(`${egg.label}を購入`)
+                    .setCustomId(`buy_${eggKey}_${index}`)
+                    .setLabel(`${index + 1}番目の卵を購入`)
                     .setStyle(ButtonStyle.Success)
             );
         });
@@ -73,12 +81,13 @@ module.exports = {
         const collector = response.createMessageComponentCollector({ time: 60000 });
 
         collector.on('collect', async (i) => {
-            if (i.user.id !== userId) return i.reply({ content: 'これはあなたのショップ画面ではありません。', ephemeral: true });
+            if (i.user.id !== userId) return i.reply({ content: '自分のショップ画面で操作してください。', ephemeral: true });
 
-            const targetKey = i.customId.replace('buy_', '');
+            // IDから卵の種類を特定 (buy_eggKey_index の形式)
+            const parts = i.customId.split('_');
+            const targetKey = `${parts[1]}_${parts[2]}`; // common_egg 等
             const targetEgg = EGG_CONFIG[targetKey];
 
-            // 所持金確認
             const moneyData = await DataModel.findOne({ id: moneyKey });
             const currentMoney = moneyData ? (Number(moneyData.value) || 0) : 0;
 
@@ -94,7 +103,7 @@ module.exports = {
                 { upsert: true }
             );
 
-            await i.reply({ content: `✅ **${targetEgg.label}** を購入しました！ \`/hatch-egg\` で孵化させましょう！`, ephemeral: true });
+            await i.reply({ content: `✅ **${targetEgg.label}** を購入しました！`, ephemeral: true });
         });
     }
 };
