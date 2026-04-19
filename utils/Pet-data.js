@@ -18,18 +18,25 @@ const PET_MASTER = {
     '柴犬': { rarity: 'Rare', multiplier: 1.25 },
     'キツネ': { rarity: 'Rare', multiplier: 1.25 },
     //Epic
+    '人魚': { rarity: 'Epic', multiplier: 1.40 },
     //Legendary
     'フェニックス': { rarity: 'Legendary', multiplier: 1.50 },
     'ユニコーン': { rarity: 'Legendary', multiplier: 1.50 },
     '白虎': { rarity: 'Legendary', multiplier: 1.50 },
     '九尾': { rarity: 'Legendary', multiplier: 1.50 },
     'グリフィン': { rarity: 'Legendary', multiplier: 1.50 },
+    '半魚人': { rarity: 'Legendary', multiplier: 1.50 },
     //Mythic
     'バハムート': { rarity: 'Myrhic', multiplier: 2.00 },
     'ゼウスの鷲': { rarity: 'Mythic', multiplier: 2.00 },
     'ケルベロス': { rarity: 'Mythic', multiplier: 2.00 },
     'リヴァイアサン': { rarity: 'Mythic', multiplier: 2.00 },
-    'アーサー王の馬': { rarity: 'Mythic', multiplier: 2.00 },   
+    'アーサー王の馬': { rarity: 'Mythic', multiplier: 2.00 },
+    '魚人': { rarity: 'Mythic', multiplier: 2.00 },   
+    //Unique
+    '海蛇': { rarity: 'Unique', multiplier: 4.00 },
+    //Artifact
+    'シーモンキー': { rarity: 'Artifact', multiplier: 10.00 },
     //Secret
     '首無し騎士': { rarity: 'Secret', multiplier: 75.00 },
     'スマーフキャット': { rarity: 'Secret', multiplier: 105.00 },
@@ -101,11 +108,11 @@ const EGG_CONFIG = {
         price: NaN,
         isSuperShop: true,
         contents: [
-            { name: 'バハムート', weight: 100 },
-            { name: 'ケルベロス', weight: 250 },
-            { name: 'ゼウスの鷲', weight: 75 },
-            { name: 'リヴァイアサン', weight: 750 },
-            { name: 'アーサー王の馬', weight: 140 }
+            { name: '人魚', weight: 40 },
+            { name: '半魚人', weight: 250 },
+            { name: '魚人', weight: 400 },
+            { name: '海蛇', weight: 750 },
+            { name: 'シーモンキー', weight: 1000 }
         ]
     }
 };
