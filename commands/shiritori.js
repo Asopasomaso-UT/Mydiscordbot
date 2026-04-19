@@ -1,7 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const mongoose = require('mongoose');
 
-const dataSchema = new mongoose.Schema({
+// スキーマが未定義の場合のみ定義
+const dataSchema = mongoose.models.QuickData?.schema || new mongoose.Schema({
     id: String,
     value: mongoose.Schema.Types.Mixed
 }, { collection: 'quickmongo' });
@@ -19,7 +20,7 @@ module.exports = {
                 .addChoices(
                     { name: 'EASY (1分/2文字〜/10💰)', value: 'easy' },
                     { name: 'NORMAL (30秒/3文字〜/30💰)', value: 'normal' },
-                    { name: 'HARD (10秒/4文字〜/伸ばし棒禁止/100💰)', value: 'hard' }
+                    { name: 'HARD (10秒/4文字〜/禁止文字あり/100💰)', value: 'hard' }
                 )),
 
     async execute(interaction) {
@@ -27,22 +28,22 @@ module.exports = {
         const diff = interaction.options.getString('difficulty');
         const dbKey = `shiritori_${interaction.guild.id}_${interaction.channel.id}`;
 
-        // 初期設定
         const data = {
             lastWord: 'しりとり',
             usedWords: ['しりとり'],
             difficulty: diff,
             count: 0,
-            lastTimestamp: Date.now() // 開始時間を記録
+            totalGained: 0, // 合計獲得コインの初期値
+            lastTimestamp: Date.now()
         };
 
         await DataModel.findOneAndUpdate({ id: dbKey }, { value: data }, { upsert: true });
 
         const embed = new EmbedBuilder()
             .setTitle(`🍎 しりとり開始 [${diff.toUpperCase()}]`)
-            .setDescription(`**「り」** から始めてください！\n\n【現在のルール】\n${getRuleText(diff)}`)
+            .setDescription(`**「り」** から始めてください！\n\n【ルール】\n${getRuleText(diff)}`)
             .setColor(diff === 'hard' ? 'Red' : diff === 'normal' ? 'Yellow' : 'Green')
-            .setFooter({ text: '※普通のチャットで単語を打って遊んでください' });
+            .setFooter({ text: '※普通のチャットで単語を打ってください' });
 
         await interaction.editReply({ embeds: [embed] });
     }
