@@ -76,4 +76,22 @@ const EVOLUTION_STAGES = [
     { name: 'Shiny', color: 0xE6E6FA, multiplier: 4 },  // Level 2
     { name: 'Neon', color: 0x00FFFF, multiplier: 8 }   // Level 3 (最大)
 ];
-module.exports = { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES };
+
+// utils/Pet-data.js
+const REBIRTH_CONFIG = {
+    REQUIRED_MONEY: 1000000, 
+    // SRに必要なリバース回数を計算 (初回30, 2回目40, 3回目50...)
+    getRequiredRebirths: (srCount) => 30 + (srCount * 10),
+    // SRでもらえるSuper Coinを計算 (1回目1枚, 2回目2枚...)
+    getSuperCoinReward: (srCount) => srCount + 1,
+    MAX_SLOT_EXTENSION: 7 // ペット枠拡張の上限（初期3 + 拡張7 = 最大10枠）
+};
+
+// Super Coin ショップのラインナップ
+const SC_SHOP_ITEMS = {
+    'secret_egg_pack': { label: 'Secret egg', price: 114514, emoji: '💎' },
+    'multiplier_boost': { label: 'Egg luck', price: 5, emoji: '🔥' },
+    'auto_hatch_pass': { label: '自動孵化パス', price: 20, emoji: '🤖' }
+};
+
+module.exports = { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES, REBIRTH_CONFIG, SC_SHOP_ITEMS };
