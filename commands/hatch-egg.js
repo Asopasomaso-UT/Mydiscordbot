@@ -104,6 +104,8 @@ module.exports = {
                 'Rare': 'Blue',
                 'Epic': 'Purple',
                 'Legendary': 'Orange',
+                'Unique' : 'Indigo',
+                'Artifact' : 'Yellow',
                 'SECRET': 'LuminousVividPink'
             };
 
