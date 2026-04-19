@@ -8,7 +8,7 @@ require('dotenv').config();
 // --- Gemini 初期化 (最も安定した呼び出し方) ---
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 // モデル名をシンプルに指定。最新のライブラリではこれが最も安定します。
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
 const dataSchema = mongoose.models.QuickData?.schema || new mongoose.Schema({
     id: String,
