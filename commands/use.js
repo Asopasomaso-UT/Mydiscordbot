@@ -5,10 +5,10 @@ const DataModel = mongoose.models.QuickData;
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('use')
-        .setDescription('アイテムを使用します')
+        .setDescription('インベントリ内のアイテムを使用します')
         .addStringOption(option =>
             option.setName('item')
-                .setDescription('使用するアイテム名')
+                .setDescription('使用するアイテム')
                 .setRequired(true)
                 .addChoices(
                     { name: '不思議なあめ', value: 'rare_candy' }
@@ -23,6 +23,7 @@ module.exports = {
         const levelKey = `level_data_${guildId}_${userId}`;
         const moneyKey = `money_${guildId}_${userId}`;
 
+        // データの取得
         const [userData, levelData] = await Promise.all([
             DataModel.findOne({ id: invKey }),
             DataModel.findOne({ id: levelKey })
@@ -38,28 +39,26 @@ module.exports = {
         if (itemKey === 'rare_candy') {
             let { level, xp } = levelData?.value || { level: 1, xp: 0 };
             
-            // レベルアップ処理
+            // 1. レベルアップ処理
             level++;
             xp = 0; // 次のレベルの最初からにする
-            
-            // レベルアップ報酬（XP付与時と同じロジック）
             const reward = level * 2000;
 
-            // インベントリの更新（個数を減らす）
+            // 2. インベントリの消費
             const updatedInventory = { ...inventory };
             updatedInventory[itemKey]--;
 
-            // DB更新
+            // 3. DB一括更新
             await Promise.all([
                 DataModel.findOneAndUpdate({ id: invKey }, { 'value.inventory': updatedInventory }),
-                DataModel.findOneAndUpdate({ id: levelKey }, { value: { level, xp } }),
+                DataModel.findOneAndUpdate({ id: levelKey }, { value: { level, xp } }, { upsert: true }),
                 DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: reward } })
             ]);
 
             const embed = new EmbedBuilder()
                 .setTitle('🍬 不思議なあめを使用した！')
-                .setDescription(`${interaction.user.username} はレベルが上がって **Lv.${level}** になった！`)
-                .addFields({ name: 'レベルアップ報酬', value: `**${reward.toLocaleString()}** 💰` })
+                .setDescription(`${interaction.user.username} のレベルが上がって **Lv.${level}** になった！`)
+                .addFields({ name: '獲得報酬', value: `**${reward.toLocaleString()}** 💰` })
                 .setColor('LuminousVividPink');
 
             return interaction.reply({ embeds: [embed] });
