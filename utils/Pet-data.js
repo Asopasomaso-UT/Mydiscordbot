@@ -150,4 +150,39 @@ const SC_SHOP_ITEMS = {
     }
 };
 
-module.exports = { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES, REBIRTH_CONFIG, SC_SHOP_ITEMS,SECRET_CONFIG };
+// エンチャントの種類と効果
+const ENCHANT_TYPES = {
+    'power': { name: 'Power', desc: 'ペット倍率アップ' },
+    'secret_agent': { name: 'Secret Agent', desc: 'シークレット確率アップ' },
+    'energy': { name: 'Energy', desc: '獲得経験値(XP)ブースト' },
+    'special_hatch': { name: 'Special Hatch', desc: '孵化時にクラフト済みが出る可能性' },
+    'mimic': { name: 'Mimic', desc: 'ペット倍率が超大幅アップ' }
+};
+
+// 強化設定
+const ENCHANT_UPGRADE = {
+    1: { next: 2, success: 0.90, failLevel: 1, cost: 5000 },
+    2: { next: 3, success: 0.75, failLevel: 1, cost: 15000 },
+    3: { next: 4, success: 0.50, failLevel: 2, cost: 40000 },
+    4: { next: 5, success: 0.25, failLevel: 3, cost: 100000 }
+};
+// utils/Pet-data.js などの設定ファイルへ
+const ENCHANT_CHANCES = {
+    'power': 68.9,          // 通常枠
+    'energy': 20.0,         // 中レア
+    'special_hatch': 10.0,   // レア
+    'secret_agent': 1.0,    // 超レア (1%)
+    'mimic': 0.1            // 伝説級 (0.1%)
+};
+
+function getRandomEnchant() {
+    const rand = Math.random() * 100;
+    let cumulative = 0;
+    
+    for (const [enchant, chance] of Object.entries(ENCHANT_CHANCES)) {
+        cumulative += chance;
+        if (rand <= cumulative) return enchant;
+    }
+    return 'power'; // フォールバック
+}
+module.exports = { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES, REBIRTH_CONFIG, SC_SHOP_ITEMS,SECRET_CONFIG,ENCHANT_TYPES,ENCHANT_UPGRADE,ENCHANT_CHANCES };

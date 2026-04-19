@@ -36,6 +36,14 @@ const ITEMS = {
         unique: false, 
         availability: { type: 'date', date: '01-22' } 
     },
+    'enchant_shield': { 
+    name: '🛡️ エンチャントシールド', 
+    price: 5000, 
+    type: 'item', 
+    unique: false, 
+    availability: { type: 'daily' },
+    desc: '強化失敗時のレベルダウンを防ぐ(1回消費)'
+    },
 };
 
 module.exports = {
