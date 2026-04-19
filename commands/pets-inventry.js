@@ -6,7 +6,7 @@ const DataModel = mongoose.models.QuickData;
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('pets')
+        .setName('pets-inventry')
         .setDescription('所持ペットの確認と装備の管理を行います'),
 
     async execute(interaction) {
