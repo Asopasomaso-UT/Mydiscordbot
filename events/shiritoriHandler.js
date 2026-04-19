@@ -41,18 +41,19 @@ module.exports = {
             // 2. 文字形式チェック
             if (!/^[ぁ-んァ-ヶー]+$/.test(input) || input.length < 2) return;
 
-            // 3. ルール判定
+            // 3. ルール判定 (頭文字一致・既出)
             const lastChar = lastWord.slice(-1) === 'ー' ? lastWord.slice(-2, -1) : lastWord.slice(-1);
             const isFirstMatch = input[0].localeCompare(lastChar, 'ja', { sensitivity: 'accent' }) === 0;
             if (!isFirstMatch) return;
             if (usedWords.includes(input)) return message.reply(`⚠️ **「${input}」** は既に出ています！`);
 
+            // 4. 「ん」終了判定
             if (input.endsWith('ん') || input.endsWith('ン')) {
                 await DataModel.deleteOne({ id: dbKey });
                 return message.reply(`💀 **「${input}」** ……「ん」がつきました！あなたの負けです！\n**獲得:** ${(totalGained || 0).toLocaleString()} 💰`);
             }
 
-            // 4. AI判定と単語生成
+            // 5. AI判定と単語生成
             const nextChar = input.slice(-1) === 'ー' ? input.slice(-2, -1) : input.slice(-1);
             const prompt = `日本語のしりとりです。
             1.「${input}」は実在する名詞？ (YES/NO)
@@ -69,18 +70,24 @@ module.exports = {
 
             if (!isExist) return message.reply(`🤔 **「${input}」** は存在しないようです！`);
 
-            if (!aiWord || aiWord.endsWith('ん')) {
+            if (!aiWord || aiWord.endsWith('ん') || aiWord.endsWith('ン')) {
                 await DataModel.deleteOne({ id: dbKey });
-                return message.reply(`🏳️ **AIの降参！** 私の負けです！\n**獲得:** ${(totalGained || 0).toLocaleString()} 💰`);
+                return message.reply(`🏳️ **AIの降参！** 適切な言葉が見つかりませんでした。私の負けです！\n**獲得:** ${(totalGained || 0).toLocaleString()} 💰`);
             }
 
-            // 5. 報酬と更新
+            // 6. 報酬計算
             let baseReward = difficulty === 'hard' ? 100 : difficulty === 'normal' ? 30 : 10;
             const finalReward = Math.floor(baseReward * (1 + Math.floor(count / 10) * 0.5));
             const newTotal = (totalGained || 0) + finalReward;
 
-            await DataModel.findOneAndUpdate({ id: `money_${message.guild.id}_${message.author.id}` }, { $inc: { value: finalReward } }, { upsert: true });
+            // ユーザーのお金を増やす
+            await DataModel.findOneAndUpdate(
+                { id: `money_${message.guild.id}_${message.author.id}` }, 
+                { $inc: { value: finalReward } }, 
+                { upsert: true }
+            );
 
+            // しりとりデータを更新
             await DataModel.findOneAndUpdate({ id: dbKey }, {
                 value: {
                     lastWord: aiWord,
@@ -92,9 +99,12 @@ module.exports = {
                 }
             });
 
+            // 次の文字を取得 (末尾がーならその前)
+            const aiNextChar = aiWord.slice(-1) === 'ー' ? aiWord.slice(-2, -1) : aiWord.slice(-1);
+
             const aiEmbed = new EmbedBuilder()
                 .setTitle(`🤖 AI: 「${aiWord}」`)
-                .setDescription(`次は **「${aiWord.slice(-1).replace('ー', aiWord.slice(-2, -1))}」** です！ (+${finalReward}💰)`)
+                .setDescription(`次は **「${aiNextChar}」** から始めてください！ (+${finalReward}💰)`)
                 .setColor('Blue');
 
             await message.reply({ embeds: [aiEmbed] });
