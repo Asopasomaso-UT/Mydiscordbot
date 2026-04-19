@@ -1,10 +1,11 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const mongoose = require('mongoose');
 const { formatCoin } = require('../utils/formatHelper');
-const { SC_SHOP_ITEMS } = require('../utils/Pet-data'); // SCショップのデータ
+const { SC_SHOP_ITEMS } = require('../utils/Pet-data');
 
 const DataModel = mongoose.models.QuickData;
 
+// 通常ショップのアイテム定義
 const ITEMS = {
     'role_silver': {           
         name: '大富豪の証',           
@@ -48,18 +49,24 @@ module.exports = {
         const moneyKey = `money_${guildId}_${userId}`;
         const petKey = `pet_data_${guildId}_${userId}`;
 
-        const [moneyData, userData] = await Promise.all([
-            DataModel.findOne({ id: moneyKey }),
-            DataModel.findOne({ id: petKey })
-        ]);
+        // 最新のユーザーデータを取得
+        const fetchUserData = async () => {
+            const [m, u] = await Promise.all([
+                DataModel.findOne({ id: moneyKey }),
+                DataModel.findOne({ id: petKey })
+            ]);
+            return {
+                money: m ? (Number(m.value) || 0) : 0,
+                sc: u?.value?.superCoin || 0,
+                fullPetData: u?.value || {}
+            };
+        };
 
-        const currentMoney = moneyData ? (Number(moneyData.value) || 0) : 0;
-        const currentSC = userData?.value?.superCoin || 0;
+        let { money: currentMoney, sc: currentSC } = await fetchUserData();
 
         // --- ページ作成関数 ---
-        const createShopPage = (page) => {
+        const createShopPage = (page, money, sc) => {
             if (page === 0) {
-                // 通常ショップ
                 const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
                 const dayOfWeek = now.getDay();
                 const monthDay = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -75,7 +82,7 @@ module.exports = {
 
                 const embed = new EmbedBuilder()
                     .setTitle('🛒 アソパショップ (通常)')
-                    .setDescription(`所持金: **${formatCoin(currentMoney)}** 💰\nアイテムを選択して購入してください。`)
+                    .setDescription(`所持金: **${formatCoin(money)}** 💰\nアイテムを選択して購入してください。`)
                     .setColor('Green');
 
                 const select = new StringSelectMenuBuilder()
@@ -89,17 +96,16 @@ module.exports = {
 
                 return { embed, select };
             } else {
-                // Super Coin ショップ
                 const embed = new EmbedBuilder()
                     .setTitle('💎 Super Coin ショップ')
-                    .setDescription(`所持 SC: **${currentSC}** 枚\nSRで手に入れた貴重なコインを使えます。`)
+                    .setDescription(`所持 SC: **${sc}** 枚\nSRで手に入れた貴重なコインを使えます。`)
                     .setColor('LuminousVividPink');
 
                 const select = new StringSelectMenuBuilder()
                     .setCustomId('shop_buy_sc')
                     .setPlaceholder('SC限定アイテムを選択')
                     .addOptions(Object.keys(SC_SHOP_ITEMS).map(id => ({
-                        label: SC_SHOP_ITEMS[id].label,
+                        label: SC_SHOP_ITEMS[id].name || SC_SHOP_ITEMS[id].label,
                         description: `${SC_SHOP_ITEMS[id].price} SC`,
                         value: id
                     })));
@@ -110,30 +116,18 @@ module.exports = {
 
         const getButtons = (page) => {
             return new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('page_normal')
-                    .setLabel('通常ショップ')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(page === 0),
-                new ButtonBuilder()
-                    .setCustomId('page_sc')
-                    .setLabel('SCショップ')
-                    .setStyle(ButtonStyle.Primary)
-                    .setDisabled(page === 1),
-                new ButtonBuilder()
-                    .setCustomId('shop_close')
-                    .setLabel('閉じる')
-                    .setStyle(ButtonStyle.Danger)
+                new ButtonBuilder().setCustomId('page_normal').setLabel('通常ショップ').setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
+                new ButtonBuilder().setCustomId('page_sc').setLabel('SCショップ').setStyle(ButtonStyle.Primary).setDisabled(page === 1),
+                new ButtonBuilder().setCustomId('shop_close').setLabel('閉じる').setStyle(ButtonStyle.Danger)
             );
         };
 
-        // 初期表示 (通常ショップ)
         let currentPage = 0;
-        let { embed, select } = createShopPage(currentPage);
+        let pageData = createShopPage(currentPage, currentMoney, currentSC);
         
         const response = await interaction.reply({
-            embeds: [embed],
-            components: [new ActionRowBuilder().addComponents(select), getButtons(currentPage)],
+            embeds: [pageData.embed],
+            components: [new ActionRowBuilder().addComponents(pageData.select), getButtons(currentPage)],
             fetchReply: true
         });
 
@@ -142,27 +136,64 @@ module.exports = {
         collector.on('collect', async (i) => {
             if (i.user.id !== userId) return i.reply({ content: '操作できません', ephemeral: true });
 
-            // ページ切り替え
-            if (i.customId === 'page_normal') {
-                currentPage = 0;
-                const next = createShopPage(currentPage);
-                return await i.update({ embeds: [next.embed], components: [new ActionRowBuilder().addComponents(next.select), getButtons(currentPage)] });
-            }
-            if (i.customId === 'page_sc') {
-                currentPage = 1;
-                const next = createShopPage(currentPage);
+            if (i.customId === 'page_normal' || i.customId === 'page_sc') {
+                currentPage = i.customId === 'page_normal' ? 0 : 1;
+                const updated = await fetchUserData();
+                const next = createShopPage(currentPage, updated.money, updated.sc);
                 return await i.update({ embeds: [next.embed], components: [new ActionRowBuilder().addComponents(next.select), getButtons(currentPage)] });
             }
 
-            // 購入処理 (通常/SC)
+            // --- 購入処理 ---
             if (i.customId === 'shop_buy_normal' || i.customId === 'shop_buy_sc') {
                 const itemId = i.values[0];
-                const item = i.customId === 'shop_buy_normal' ? ITEMS[itemId] : SC_SHOP_ITEMS[itemId];
-                
-                // ここで購入ロジックを実装（残高チェック・DB更新・役職付与など）
-                // ...
-                
-                await i.reply({ content: `✅ **${item.name || item.label}** を購入しました！`, ephemeral: true });
+                const isSC = i.customId === 'shop_buy_sc';
+                const item = isSC ? SC_SHOP_ITEMS[itemId] : ITEMS[itemId];
+
+                const updated = await fetchUserData();
+                const balance = isSC ? updated.sc : updated.money;
+
+                if (balance < item.price) {
+                    return i.reply({ content: `${isSC ? 'Super Coin' : 'コイン'}が足りません！`, ephemeral: true });
+                }
+
+                // 支払い処理
+                if (isSC) {
+                    await DataModel.findOneAndUpdate({ id: petKey }, { $inc: { 'value.superCoin': -item.price } });
+                } else {
+                    await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: -item.price } });
+                }
+
+                // --- アイテムタイプ別の付与処理 ---
+                let resultMessage = `✅ **${item.name || item.label}** を購入しました！`;
+
+                if (item.type === 'egg') {
+                    // 卵の付与 (EGG_CONFIGのキーを使用)
+                    await DataModel.findOneAndUpdate(
+                        { id: petKey },
+                        { $inc: { [`value.inventory.${item.eggKey}`]: 1 } }
+                    );
+                    resultMessage += `\n\`/hatch-egg\` で孵化させることができます。`;
+                } else if (item.type === 'role') {
+                    // 役職の付与
+                    const role = interaction.guild.roles.cache.get(item.roleId);
+                    if (role) {
+                        await i.member.roles.add(role).catch(() => {});
+                        resultMessage += `\n役職がプロファイルに追加されました。`;
+                    }
+                } else if (item.type === 'buff') {
+                    // 永続バフ (例: ベース倍率加算)
+                    await DataModel.findOneAndUpdate(
+                        { id: petKey },
+                        { $inc: { 'value.permanentMultiplier': 0.1 } }
+                    );
+                }
+
+                await i.reply({ content: resultMessage, ephemeral: true });
+
+                // 画面を更新
+                const refreshed = await fetchUserData();
+                const next = createShopPage(currentPage, refreshed.money, refreshed.sc);
+                await interaction.editReply({ embeds: [next.embed], components: [new ActionRowBuilder().addComponents(next.select), getButtons(currentPage)] });
             }
 
             if (i.customId === 'shop_close') {

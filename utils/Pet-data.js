@@ -134,9 +134,13 @@ const REBIRTH_CONFIG = {
 
 // Super Coin ショップのラインナップ
 const SC_SHOP_ITEMS = {
-    'Exiotic_egg': { label: 'Exotic egg', price: 114514, emoji: '💎' },
-    'multiplier_boost': { label: 'Egg luck', price: 5, emoji: '🔥' },
-    'auto_hatch_pass': { label: '自動孵化パス', price: 20, emoji: '🤖' }
+    // 卵の販売
+    'Exotic_egg': {
+        name: 'Exotic egg',
+        price: 100,
+        type: 'egg', // 種類を分ける
+        Egg_key: 'Exotic egg'
+    }
 };
 
 module.exports = { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES, REBIRTH_CONFIG, SC_SHOP_ITEMS,SECRET_CONFIG };
