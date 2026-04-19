@@ -1,13 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const mongoose = require('mongoose');
+const { formatCoin } = require('../utils/formatHelper'); // 単位対応用のヘルパーをインポート
 
-// スキーマ定義
-const dataSchema = new mongoose.Schema({
-    id: String,
-    value: mongoose.Schema.Types.Mixed
-}, { collection: 'quickmongo' });
-
-const DataModel = mongoose.models.QuickData || mongoose.model('QuickData', dataSchema);
+const DataModel = mongoose.models.QuickData;
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -21,14 +16,12 @@ module.exports = {
         )
         .addIntegerOption(option =>
             option.setName('amount')
-                .setDescription('付与する金額（マイナスも可能）')
+                .setDescription('付与する金額（制限なし。マイナスも可能）')
                 .setRequired(true)
-                .setMinValue(-1000000)
-                .setMaxValue(1000000)
+                // setMinValue / setMaxValue を削除して上限を撤廃
         ),
 
     async execute(interaction) {
-        // ★最速で保留応答を返す
         await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
         const { guild } = interaction;
@@ -37,21 +30,26 @@ module.exports = {
         const dbKey = `money_${guild.id}_${targetUser.id}`;
 
         try {
-            // MongoDB の接続チェックは main.js に任せて削除
-
             // $inc を使い、1回の通信で「加算」と「結果取得」を同時に行う
+            // 金額が大きい場合でも MongoDB の Number 精度で処理されます
             const record = await DataModel.findOneAndUpdate(
                 { id: dbKey },
-                { $inc: { value: amount } }, // value を amount 分増やす
-                { upsert: true, new: true }   // なければ作成し、更新後のデータを返す
+                { $inc: { value: amount } }, 
+                { upsert: true, new: true }   
             );
 
             const newBalance = record.value || 0;
 
+            // formatCoin または toLocaleString を使用して単位表示に対応
+            const displayAmount = amount >= 0 ? `+${formatCoin(amount)}` : formatCoin(amount);
+
             const embed = new EmbedBuilder()
                 .setTitle('💰 コイン付与完了')
-                .setDescription(`${targetUser.username} に **${amount.toLocaleString()}** コインを付与しました。`)
-                .addFields({ name: '現在の残高', value: `**${newBalance.toLocaleString()}** コイン` })
+                .setDescription(`${targetUser.username} に **${displayAmount}** 💰 を付与しました。`)
+                .addFields({ 
+                    name: '現在の残高', 
+                    value: `**${formatCoin(newBalance)}** 💰` 
+                })
                 .setColor('Green')
                 .setTimestamp();
 
@@ -59,7 +57,6 @@ module.exports = {
 
         } catch (error) {
             console.error('Addmoney Error:', error);
-            // deferReply 済みなので editReply でエラー通知
             await interaction.editReply({ content: 'コインの付与処理中にエラーが発生しました。' });
         }
     },
