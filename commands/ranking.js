@@ -11,20 +11,35 @@ const DataModel = mongoose.models.QuickData || mongoose.model('QuickData', dataS
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('ranking')
-        .setDescription('累計獲得賞金ランキング（TOP50）を表示します'),
+        .setDescription('ランキングを表示します')
+        .addStringOption(option =>
+            option.setName('タイプ')
+                .setDescription('表示するランキングの種類を選択してください')
+                .setRequired(true)
+                .addChoices(
+                    { name: '累計獲得額 (生涯スコア)', value: 'total_earned_' },
+                    { name: '現在の所持金 (財布の中身)', value: 'money_' }
+                )),
 
     async execute(interaction) {
-        // 1. サーバー内の累計獲得データをすべて取得
+        const type = interaction.options.getString('タイプ');
+        const guildId = interaction.guild.id;
+
+        // 1. 指定されたタイプに基づいてデータを取得
         const allData = await DataModel.find({
-            id: { $regex: `^total_earned_${interaction.guild.id}_` }
+            id: { $regex: `^${type}${guildId}_` }
         });
 
         // 2. データを整形して降順ソート、上位50名を取得
         const sortedData = allData
-            .map(item => ({
-                userId: item.id.split('_')[3],
-                total: item.value || 0
-            }))
+            .map(item => {
+                const parts = item.id.split('_');
+                return {
+                    // タイプによってIDの構造が少し違う場合の対策
+                    userId: parts[parts.length - 1], 
+                    total: item.value || 0
+                };
+            })
             .filter(item => item.total > 0)
             .sort((a, b) => b.total - a.total)
             .slice(0, 50);
@@ -33,7 +48,10 @@ module.exports = {
             return interaction.reply('まだランキングデータがありません。');
         }
 
-        // 3. 25名ずつのページを作成する関数
+        const typeName = type === 'total_earned_' ? '累計獲得コイン' : '現在の所持金';
+        const color = type === 'total_earned_' ? 'Gold' : 'Green';
+
+        // 3. ページ作成関数
         const createEmbed = async (page) => {
             const start = page * 25;
             const end = start + 25;
@@ -51,30 +69,29 @@ module.exports = {
             }));
 
             return new EmbedBuilder()
-                .setTitle(`🏆 ${interaction.guild.name} 累計獲得コインTOP50`)
+                .setTitle(`🏆 ${interaction.guild.name} ${typeName} TOP50`)
                 .setDescription(rankingList.join('\n'))
-                .setColor('Gold')
+                .setColor(color)
                 .setFooter({ text: `ページ ${page + 1} / 2 (全${sortedData.length}名)` })
                 .setTimestamp();
         };
 
-        // 4. ボタンの作成
         const getButtons = (page) => {
             return new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
                     .setCustomId('prev')
                     .setLabel('◀ 前の25名')
-                    .setStyle(ButtonStyle.Primary)
+                    .setStyle(ButtonStyle.Secondary)
                     .setDisabled(page === 0),
                 new ButtonBuilder()
                     .setCustomId('next')
                     .setLabel('次の25名 ▶')
-                    .setStyle(ButtonStyle.Primary)
+                    .setStyle(ButtonStyle.Secondary)
                     .setDisabled(page === 1 || sortedData.length <= 25)
             );
         };
 
-        // 最初の表示
+        // 初期表示
         let currentPage = 0;
         const initialEmbed = await createEmbed(currentPage);
         const initialMessage = await interaction.reply({ 
@@ -83,10 +100,10 @@ module.exports = {
             fetchReply: true 
         });
 
-        // 5. ボタンクリックの待機 (コレクター)
+        // 4. ボタンコレクター
         const collector = initialMessage.createMessageComponentCollector({
-            filter: (i) => i.user.id === interaction.user.id, // 実行した本人だけ操作可能
-            time: 60000 // 60秒間受け付ける
+            filter: (i) => i.user.id === interaction.user.id,
+            time: 60000
         });
 
         collector.on('collect', async (i) => {
@@ -101,7 +118,6 @@ module.exports = {
         });
 
         collector.on('end', () => {
-            // タイムアウトしたらボタンを無効化
             initialMessage.edit({ components: [] }).catch(() => null);
         });
     },
