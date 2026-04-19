@@ -1,3 +1,5 @@
+require('dotenv').config(); // これがないと .env を読み込めません
+
 const { Events, EmbedBuilder } = require('discord.js');
 const mongoose = require('mongoose');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
