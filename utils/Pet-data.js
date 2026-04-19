@@ -40,7 +40,7 @@ const PET_MASTER = {
 
 // 卵ごとの設定
 const EGG_CONFIG = {
-    'Common_egg': {
+    'common_egg': {
         name: 'common egg',
         price: 1000,
         // この卵から出る特定のペットリスト（重み付け）
@@ -122,7 +122,7 @@ const REBIRTH_CONFIG = {
 
 // Super Coin ショップのラインナップ
 const SC_SHOP_ITEMS = {
-    'secret_egg_pack': { label: 'Secret egg', price: 114514, emoji: '💎' },
+    'exiotic_egg': { label: 'Exotic egg', price: 114514, emoji: '💎' },
     'multiplier_boost': { label: 'Egg luck', price: 5, emoji: '🔥' },
     'auto_hatch_pass': { label: '自動孵化パス', price: 20, emoji: '🤖' }
 };

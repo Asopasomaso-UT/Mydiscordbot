@@ -7,10 +7,11 @@ const DataModel = mongoose.models.QuickData;
 
 // 卵ごとの絵文字設定（Pet-dataのキーに合わせる）
 const EGG_EMOJI = {
-    'basic_egg': '🥚',
-    'rare_egg': '🔵',
-    'legendary_egg': '🟡',
-    'mythic_egg': '🟣',
+    'common_egg': '🥚',
+    'Uncommon_egg': '🟢',
+    'Rare_egg': '🔵',
+    'Legendary_egg': '🟡',
+    'Mythic_egg': '🟣',
     'Exotic_egg': '💎'
 };
 
