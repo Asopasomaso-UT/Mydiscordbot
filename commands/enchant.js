@@ -78,9 +78,9 @@ module.exports = {
 
                 if (!currentEnchant) {
                     // 新規付与
-                    menuEmbed.setDescription(`費用: **50,000** 💰\nMimic(0.1%)やSecret Agent(1%)を狙えます。`);
+                    menuEmbed.setDescription(`費用: **50,000** 💰\n装備中のペットにエンチャントを付与・強化します`);
                     menuRow.addComponents(
-                        new ButtonBuilder().setCustomId(`do_new_${targetPetId}`).setLabel('新規付与 (50k)').setStyle(ButtonStyle.Primary).setDisabled(currentMoney < 50000)
+                        new ButtonBuilder().setCustomId(`do_new_${targetPetId}`).setLabel('エンチャント').setStyle(ButtonStyle.Primary).setDisabled(currentMoney < 50000)
                     );
                 } else if (currentEnchant.level >= 5) {
                     // MAX
