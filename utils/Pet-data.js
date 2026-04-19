@@ -95,6 +95,18 @@ const EGG_CONFIG = {
             { name: 'リヴァイアサン', weight: 750 },
             { name: 'アーサー王の馬', weight: 140 }
         ]
+    },
+    'Exotic_egg': {
+        name: 'Exotic egg',
+        price: NaN,
+        isSuperShop: true,
+        contents: [
+            { name: 'バハムート', weight: 100 },
+            { name: 'ケルベロス', weight: 250 },
+            { name: 'ゼウスの鷲', weight: 75 },
+            { name: 'リヴァイアサン', weight: 750 },
+            { name: 'アーサー王の馬', weight: 140 }
+        ]
     }
 };
 
@@ -122,7 +134,7 @@ const REBIRTH_CONFIG = {
 
 // Super Coin ショップのラインナップ
 const SC_SHOP_ITEMS = {
-    'exiotic_egg': { label: 'Exotic egg', price: 114514, emoji: '💎' },
+    'Exiotic_egg': { label: 'Exotic egg', price: 114514, emoji: '💎' },
     'multiplier_boost': { label: 'Egg luck', price: 5, emoji: '🔥' },
     'auto_hatch_pass': { label: '自動孵化パス', price: 20, emoji: '🤖' }
 };

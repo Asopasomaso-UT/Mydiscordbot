@@ -5,14 +5,12 @@ const { formatCoin } = require('../utils/formatHelper');
 
 const DataModel = mongoose.models.QuickData;
 
-// 卵ごとの絵文字設定（Pet-dataのキーに合わせる）
 const EGG_EMOJI = {
-    'common_egg': '🥚',
-    'Uncommon_egg': '🟢',
-    'Rare_egg': '🔵',
-    'Legendary_egg': '🟡',
-    'Mythic_egg': '🟣',
-    'Exotic_egg': '💎'
+    'basic_egg': '🥚',
+    'rare_egg': '🔵',
+    'legendary_egg': '🟡',
+    'mythic_egg': '🟣',
+    'secret_egg_pack': '💎'
 };
 
 module.exports = {
@@ -30,14 +28,21 @@ module.exports = {
 
         let shopData = await DataModel.findOne({ id: shopKey });
         
-        // 1. 在庫の更新チェック（30分 = 1,800,000ms）
-        if (!shopData || (now - shopData.value.lastUpdate) > 1800000) {
-            const keys = Object.keys(EGG_CONFIG);
-            const newStock = [];
+        // --- 1. 在庫の更新とクリーンアップ ---
+        // 以下のいずれかの場合に在庫を再生成する:
+        // - データが存在しない
+        // - 30分経過した
+        // - 現在の在庫(stock)の中に、EGG_CONFIGに存在しない古いキーが混じっている (エラー防止)
+        const hasInvalidEgg = shopData?.value?.stock?.some(key => !EGG_CONFIG[key]);
+        const isExpired = !shopData || (now - shopData.value.lastUpdate) > 1800000;
+
+        if (isExpired || hasInvalidEgg) {
+            // 通常ショップに並ぶ卵（isSuperShopフラグがないもの）だけを抽出
+            const availableEggKeys = Object.keys(EGG_CONFIG).filter(key => !EGG_CONFIG[key].isSuperShop);
             
-            // 重複を許容して3つランダムに選出
+            const newStock = [];
             for (let i = 0; i < 3; i++) {
-                const randomEgg = keys[Math.floor(Math.random() * keys.length)];
+                const randomEgg = availableEggKeys[Math.floor(Math.random() * availableEggKeys.length)];
                 newStock.push(randomEgg);
             }
 
@@ -59,9 +64,13 @@ module.exports = {
 
         const row = new ActionRowBuilder();
 
-        // 2. ボタンとフィールドの作成
+        // --- 2. 表示の生成 ---
         currentStock.forEach((eggKey, index) => {
             const egg = EGG_CONFIG[eggKey];
+            
+            // 念のためのガード（万が一キーが見つからない場合は表示しない）
+            if (!egg) return;
+
             const emoji = EGG_EMOJI[eggKey] || '🥚';
             
             embed.addFields({ 
@@ -72,29 +81,31 @@ module.exports = {
             
             row.addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`buy_egg_${eggKey}_${index}`) // 解析しやすいようにbuy_egg_を付与
+                    .setCustomId(`buy_egg_${eggKey}_${index}`)
                     .setLabel(`${index + 1}番目を購入`)
                     .setStyle(ButtonStyle.Success)
             );
         });
 
+        // ボタンが1つも生成されなかった（全ての卵が無効だった）場合の処理
+        if (row.components.length === 0) {
+            return interaction.reply({ content: '現在ショップに並べられる卵がありません。', ephemeral: true });
+        }
+
         const response = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
 
-        // 3. 購入処理
+        // --- 3. 購入ロジック ---
         const collector = response.createMessageComponentCollector({ time: 60000 });
 
         collector.on('collect', async (i) => {
-            if (i.user.id !== userId) return i.reply({ content: '自分のショップ画面で操作してください。', ephemeral: true });
+            if (i.user.id !== userId) return i.reply({ content: '自分の画面で操作してください。', ephemeral: true });
 
-            // ID解析 (buy_egg_eggKey_index)
             const parts = i.customId.split('_');
-            // eggKeyが 'basic_egg' のようにアンダースコアを含む場合を考慮
             const eggKey = parts.slice(2, -1).join('_'); 
             const targetEgg = EGG_CONFIG[eggKey];
 
-            if (!targetEgg) return i.reply({ content: 'エラー：卵の情報が見つかりません。', ephemeral: true });
+            if (!targetEgg) return i.reply({ content: 'この卵は現在取り扱っておりません。', ephemeral: true });
 
-            // お金の確認
             const moneyData = await DataModel.findOne({ id: moneyKey });
             const currentMoney = moneyData ? (Number(moneyData.value) || 0) : 0;
 
@@ -102,7 +113,7 @@ module.exports = {
                 return i.reply({ content: `コインが足りません！ (必要: ${formatCoin(targetEgg.price)})`, ephemeral: true });
             }
 
-            // 決済と付与
+            // 決済処理
             await Promise.all([
                 DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: -targetEgg.price } }),
                 DataModel.findOneAndUpdate(
@@ -112,7 +123,7 @@ module.exports = {
                 )
             ]);
 
-            await i.reply({ content: `✅ **${targetEgg.name}** を購入しました！\n \`/hatch-egg\` で孵化させることができます。`, ephemeral: true });
+            await i.reply({ content: `✅ **${targetEgg.name}** を購入しました！`, ephemeral: true });
         });
     }
 };
