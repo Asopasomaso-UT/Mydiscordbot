@@ -37,19 +37,20 @@ const ITEMS = {
         availability: { type: 'date', date: '01-22' } 
     },
     'enchant_shield': { 
-    name: '🛡️ エンチャントシールド', 
-    price: 5000, 
-    type: 'item', 
-    unique: false, 
-    availability: { type: 'daily' },
-    desc: '強化失敗時のレベルダウンを防ぐ(1回消費)'
+        name: '🛡️ エンチャントシールド', 
+        price: 5000, 
+        type: 'item', 
+        unique: false, 
+        availability: { type: 'daily' },
+        desc: '強化失敗時のレベルダウンを防ぐ(1回消費)'
     },
     'rare_candy': {
-    name: '不思議なあめ',
-    price: 150000, // 少し高めの設定
-    type: 'item', 
-    availability: { type: 'daily' },
-    desc: '食べるとレベルが1上がります。',
+        name: '不思議なあめ',
+        price: 150000, 
+        type: 'item', 
+        unique: false,
+        availability: { type: 'daily' },
+        desc: '食べるとレベルが1上がります。',
     },
 };
 
@@ -64,7 +65,6 @@ module.exports = {
         const moneyKey = `money_${guildId}_${userId}`;
         const petKey = `pet_data_${guildId}_${userId}`;
 
-        // 最新のユーザーデータを取得
         const fetchUserData = async () => {
             const [m, u] = await Promise.all([
                 DataModel.findOne({ id: moneyKey }),
@@ -79,7 +79,6 @@ module.exports = {
 
         let { money: currentMoney, sc: currentSC } = await fetchUserData();
 
-        // --- ページ作成関数 ---
         const createShopPage = (page, money, sc) => {
             if (page === 0) {
                 const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
@@ -105,7 +104,7 @@ module.exports = {
                     .setPlaceholder('通常アイテムを選択')
                     .addOptions(availableIds.map(id => ({
                         label: ITEMS[id].name,
-                        description: `${formatCoin(ITEMS[id].price)} コイン`,
+                        description: `${formatCoin(ITEMS[id].price)} コイン${ITEMS[id].desc ? ` | ${ITEMS[id].desc}` : ''}`,
                         value: id
                     })));
 
@@ -158,7 +157,6 @@ module.exports = {
                 return await i.update({ embeds: [next.embed], components: [new ActionRowBuilder().addComponents(next.select), getButtons(currentPage)] });
             }
 
-            // --- 購入処理 ---
             if (i.customId === 'shop_buy_normal' || i.customId === 'shop_buy_sc') {
                 const itemId = i.values[0];
                 const isSC = i.customId === 'shop_buy_sc';
@@ -178,25 +176,29 @@ module.exports = {
                     await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: -item.price } });
                 }
 
-                // --- アイテムタイプ別の付与処理 ---
+                // --- 重要：アイテムの付与ロジック ---
                 let resultMessage = `✅ **${item.name || item.label}** を購入しました！`;
 
-                if (item.type === 'egg') {
-                    // 卵の付与 (EGG_CONFIGのキーを使用)
+                if (item.type === 'item') {
+                    // 不思議なあめやシールドをインベントリ（pet_data 内）に追加
+                    await DataModel.findOneAndUpdate(
+                        { id: petKey },
+                        { $inc: { [`value.inventory.${itemId}`]: 1 } },
+                        { upsert: true }
+                    );
+                } else if (item.type === 'egg') {
                     await DataModel.findOneAndUpdate(
                         { id: petKey },
                         { $inc: { [`value.inventory.${item.eggKey}`]: 1 } }
                     );
                     resultMessage += `\n\`/hatch-egg\` で孵化させることができます。`;
                 } else if (item.type === 'role') {
-                    // 役職の付与
                     const role = interaction.guild.roles.cache.get(item.roleId);
                     if (role) {
                         await i.member.roles.add(role).catch(() => {});
                         resultMessage += `\n役職がプロファイルに追加されました。`;
                     }
                 } else if (item.type === 'buff') {
-                    // 永続バフ (例: ベース倍率加算)
                     await DataModel.findOneAndUpdate(
                         { id: petKey },
                         { $inc: { 'value.permanentMultiplier': 0.1 } }
@@ -205,7 +207,6 @@ module.exports = {
 
                 await i.reply({ content: resultMessage, ephemeral: true });
 
-                // 画面を更新
                 const refreshed = await fetchUserData();
                 const next = createShopPage(currentPage, refreshed.money, refreshed.sc);
                 await interaction.editReply({ embeds: [next.embed], components: [new ActionRowBuilder().addComponents(next.select), getButtons(currentPage)] });
