@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const mongoose = require('mongoose');
+const { formatCoin } = require('../utils/formatHelper'); // 単位変換関数をインポート
 
 const dataSchema = mongoose.models.QuickData?.schema || new mongoose.Schema({
     id: String,
@@ -35,9 +36,8 @@ module.exports = {
             .map(item => {
                 const parts = item.id.split('_');
                 return {
-                    // タイプによってIDの構造が少し違う場合の対策
                     userId: parts[parts.length - 1], 
-                    total: item.value || 0
+                    total: Number(item.value) || 0 // 数値として扱う
                 };
             })
             .filter(item => item.total > 0)
@@ -59,12 +59,15 @@ module.exports = {
 
             const rankingList = await Promise.all(currentData.map(async (data, index) => {
                 const globalIndex = start + index;
-                const crown = globalIndex === 0 ? '🥇' : globalIndex === 1 ? '🥈' : globalIndex === 2 ? '🥉' : `${globalIndex + 1}位`;
+                // メダルと順位の装飾
+                const rankPrefix = globalIndex === 0 ? '🥇' : globalIndex === 1 ? '🥈' : globalIndex === 2 ? '🥉' : `**${globalIndex + 1}.**`;
+                
                 try {
                     const user = await interaction.client.users.fetch(data.userId);
-                    return `${crown} **${user.username}**: ${data.total.toLocaleString()} 💰`;
+                    // formatCoinを適用！
+                    return `${rankPrefix} **${user.username}**: \`${formatCoin(data.total)}\` 💰`;
                 } catch {
-                    return `${crown} **不明なユーザー**: ${data.total.toLocaleString()} 💰`;
+                    return `${rankPrefix} **不明なユーザー**: \`${formatCoin(data.total)}\` 💰`;
                 }
             }));
 
