@@ -1,73 +1,106 @@
 const PET_MASTER = {
-    'Common': {
-        color: 0xaaaaaa,
-        list: [
-            { name: 'スライム', multiplier: 1.05 },
-            { name: '豆柴', multiplier: 1.05 },
-            { name: '小鳥', multiplier: 1.05 },
-            { name: 'おたまじゃくし', multiplier: 1.05 },
-            { name: '野良猫', multiplier: 1.05 }
-        ]
-    },
-    'Uncommon': {
-        color: 0x55ff55,
-        list: [
-            { name: '三毛猫', multiplier: 1.10 },
-            { name: 'シマリス', multiplier: 1.10 },
-            { name: 'ペンギン', multiplier: 1.10 },
-            { name: '子ブタ', multiplier: 1.10 },
-            { name: 'ウサギ', multiplier: 1.10 }
-        ]
-    },
-    'Rare': {
-        color: 0x5555ff,
-        list: [
-            { name: 'シロクマ', multiplier: 1.25 },
-            { name: 'レッサーパンダ', multiplier: 1.25 },
-            { name: '鷹', multiplier: 1.25 },
-            { name: '柴犬', multiplier: 1.25 },
-            { name: 'キツネ', multiplier: 1.25 }
-        ]
-    },
-    'Legendary': {
-        color: 0xffff55,
-        list: [
-            { name: 'フェニックス', multiplier: 1.50 },
-            { name: 'ユニコーン', multiplier: 1.50 },
-            { name: '白虎', multiplier: 1.50 },
-            { name: '九尾の狐', multiplier: 1.50 },
-            { name: 'グリフォン', multiplier: 1.50 }
-        ]
-    },
-    'Mythic': {
-        color: 0xff55ff,
-        list: [
-            { name: 'バハムート', multiplier: 2.00 },
-            { name: 'ゼウスの鷲', multiplier: 2.00 },
-            { name: 'ケルベロス', multiplier: 2.00 },
-            { name: 'リヴァイアサン', multiplier: 2.00 },
-            { name: 'アーサー王の馬', multiplier: 2.00 }
-        ]
-    },
-    'Secret': {
-        color: 0xffffff,
-        list: [
-            { name: '首無し騎士', multiplier: 75 },
-            { name: 'スマーフキャット', multiplier: 120 },
-            { name: 'アソパソマソ', multiplier: 200 },
-            { name: 'シモ・ヘイヘ', multiplier: 205 },
-            { name: 'Sleepwalker', multiplier: 150 }
-        ]
-    }
+    //common
+    'スライム': { rarity: 'Common', multiplier: 1.05 },
+    '豆しば': { rarity: 'Common', multiplier: 1.05 },
+    'おたまじゃくし': { rarity: 'common', multiplier: 1.05 },
+    '野良猫': { rarity: 'Common', multiplier: 1.05 },
+    '小鳥': { rarity: 'Common', multiplier: 1.05 },
+    //Uncommon
+    '三毛猫': { rarity: 'Uncommon', multiplier: 1.10 },
+    'シマリス': { rarity: 'UnCommon', multiplier: 1.10 },
+    '子豚': { rarity: 'UnCommon', multiplier: 1.10 },
+    'ウサギ': { rarity: 'Uncommon', multiplier: 1.10 },
+    'ペンギン': { rarity: 'Uncommon', multiplier: 1.10 },
+    //Rare
+    'シロクマ': { rarity: 'Rare', multiplier: 1.25 },
+    'レッサーパンダ': { rarity: 'Rare', multiplier: 1.25 },
+    '鷹': { rarity: 'Rare', multiplier: 1.25 },
+    '柴犬': { rarity: 'Rare', multiplier: 1.25 },
+    'キツネ': { rarity: 'Rare', multiplier: 1.25 },
+    //Epic
+    //Legendary
+    'フェニックス': { rarity: 'Legendary', multiplier: 1.50 },
+    'ユニコーン': { rarity: 'Legendary', multiplier: 1.50 },
+    '白虎': { rarity: 'Legendary', multiplier: 1.50 },
+    '九尾': { rarity: 'Legendary', multiplier: 1.50 },
+    'グリフィン': { rarity: 'Legendary', multiplier: 1.50 },
+    //Mythic
+    'バハムート': { rarity: 'Myrhic', multiplier: 2.00 },
+    'ゼウスの鷲': { rarity: 'Mythic', multiplier: 2.00 },
+    'ケルベロス': { rarity: 'Mythic', multiplier: 2.00 },
+    'リヴァイアサン': { rarity: 'Mythic', multiplier: 2.00 },
+    'アーサー王の馬': { rarity: 'Mythic', multiplier: 2.00 },   
+    //Secret
+    '首無し騎士': { rarity: 'Secret', multiplier: 75.00 },
+    'スマーフキャット': { rarity: 'Secret', multiplier: 105.00 },
+    'アソパソマソ': { rarity: 'Secret', multiplier: 130.00 },
+    'Keyboard Crusher': { rarity: 'Secret', multiplier: 135.00 },
+    'Angel of darkness': { rarity: 'Secret', multiplier: 150.00 }, 
 };
 
 // 卵ごとの設定
 const EGG_CONFIG = {
-    'common_egg': { label: 'Common Egg', price: 1000, rates: { 'Common': 80, 'Uncommon': 19.99999, 'Secret': 0.00001 } },
-    'uncommon_egg': { label: 'Uncommon Egg', price: 3000, rates: { 'Common': 30, 'Uncommon': 60, 'Rare': 9.99999, 'Secret': 0.00001 } },
-    'rare_egg': { label: 'Rare Egg', price: 10000, rates: { 'Uncommon': 40, 'Rare': 50, 'Legendary': 9.99999, 'Secret': 0.00001 } },
-    'legendary_egg': { label: 'Legendary Egg', price: 50000, rates: { 'Rare': 30, 'Legendary': 60, 'Mythic': 9.9999, 'Secret': 0.0001 } },
-    'mythic_egg': { label: 'Mythic Egg', price: 200000, rates: { 'Legendary': 40, 'Mythic': 59.999, 'Secret': 0.001 } }
+    'Common_egg': {
+        name: 'common egg',
+        price: 1000,
+        // この卵から出る特定のペットリスト（重み付け）
+        contents: [
+            { name: 'スライム', weight: 20 },
+            { name: '豆しば', weight: 3 },
+            { name: 'おたまじゃくし', weight: 1 },
+            { name: '野良猫', weight: 6 },
+            { name: '小鳥', weight: 1 }
+        ]
+    },
+    'Uncommon_egg': {
+        name: 'Uncommon egg',
+        price: 3000,
+        contents: [
+            { name: '三毛猫', weight: 6 },
+            { name: 'シマリス', weight: 4.5 },
+            { name: '子豚', weight: 10 },
+            { name: 'ウサギ', weight: 6 },
+            { name: 'ペンギン', weight: 15 }
+        ]
+    },
+    'Rare_egg': {
+        name: 'Rare egg',
+        price: 10000,
+        contents: [
+            { name: 'シロクマ', weight: 50 },
+            { name: 'レッサーパンダ', weight: 40 },
+            { name: '鷹', weight: 10 },
+            { name: '柴犬', weight: 8 },
+            { name: 'キツネ', weight: 5 }
+        ]
+    },
+    'Legendary_egg': {
+        name: 'Legendary egg',
+        price: 50000,
+        contents: [
+            { name: 'フェニックス', weight: 50 },
+            { name: 'ユニコーン', weight: 40 },
+            { name: '白虎', weight: 30 },
+            { name: '九尾', weight: 100 },
+            { name: 'グリフィン', weight: 55 }
+        ]
+    },
+    'Mythic_egg': {
+        name: 'Mythic egg',
+        price: 200000,
+        contents: [
+            { name: 'バハムート', weight: 100 },
+            { name: 'ケルベロス', weight: 250 },
+            { name: 'ゼウスの鷲', weight: 75 },
+            { name: 'リヴァイアサン', weight: 750 },
+            { name: 'アーサー王の馬', weight: 140 }
+        ]
+    }
+};
+
+const SECRET_CONFIG = {
+    CHANCE: 0.00001, // 0.1% の確率でシークレット判定
+    PETS: ['首無し騎士', 'スマーフキャット', 'アソパソマソ', 'Keyboard Crusher', 'Angel of darkness'] // シークレット判定に当選した際に出るペット
 };
 
 const EVOLUTION_STAGES = [
@@ -94,4 +127,4 @@ const SC_SHOP_ITEMS = {
     'auto_hatch_pass': { label: '自動孵化パス', price: 20, emoji: '🤖' }
 };
 
-module.exports = { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES, REBIRTH_CONFIG, SC_SHOP_ITEMS };
+module.exports = { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES, REBIRTH_CONFIG, SC_SHOP_ITEMS,SECRET_CONFIG };
