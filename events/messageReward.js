@@ -18,7 +18,8 @@ module.exports = {
 
         const { author, guild } = message;
         const moneyKey = `money_${guild.id}_${author.id}`;
-        const totalEarnedKey = `total_earned_${guild.id}_${author.id}`; // 累計額用キー
+        const totalEarnedKey = `total_earned_${guild.id}_${author.id}`;
+        const petKey = `pet_data_${guild.id}_${author.id}`;
 
         try {
             // MongoDB 接続確認
@@ -26,23 +27,45 @@ module.exports = {
                 await mongoose.connect(process.env.MONGO_URI);
             }
 
-            // 1. 【所持金】の更新（10コイン加算）
-            await DataModel.findOneAndUpdate(
-                { id: moneyKey },
-                { $inc: { value: 10 } },
-                { upsert: true, returnDocument: 'after' }
-            );
+            // 1. ペットデータの取得
+            const petData = await DataModel.findOne({ id: petKey });
+            
+            // 2. ペット倍率の計算
+            let totalMultiplier = 1.0;
+            const pets = petData?.value?.pets || [];
+            const equippedIds = petData?.value?.equippedPetIds || [];
+            
+            // 装備中のペットのみを抽出して倍率を加算
+            const equippedPets = pets.filter(p => equippedIds.includes(p.petId));
+            equippedPets.forEach(p => {
+                // 例: 1.05倍なら +0.05, 200倍なら +199.0
+                totalMultiplier += (p.multiplier - 1);
+            });
 
-            // 2. 【累計獲得額】の更新（10コイン加算）
-            // これによりメッセージ送信分もランキングに反映されます
-            await DataModel.findOneAndUpdate(
-                { id: totalEarnedKey },
-                { $inc: { value: 10 } },
-                { upsert: true, returnDocument: 'after' }
-            );
+            // 3. 最終報酬の計算（基本10コイン × 倍率）
+            const baseAmount = 10;
+            const finalReward = Math.floor(baseAmount * totalMultiplier);
+
+            // 4. 【所持金】と【累計獲得額】の更新
+            // $inc を使って一度の操作で加算
+            await Promise.all([
+                DataModel.findOneAndUpdate(
+                    { id: moneyKey },
+                    { $inc: { value: finalReward } },
+                    { upsert: true }
+                ),
+                DataModel.findOneAndUpdate(
+                    { id: totalEarnedKey },
+                    { $inc: { value: finalReward } },
+                    { upsert: true }
+                )
+            ]);
+
+            // デバッグ用（必要であればコメントアウトを解除）
+            // console.log(`${author.tag}: ${finalReward}コイン付与 (倍率: x${totalMultiplier.toFixed(2)})`);
 
         } catch (error) {
-            console.error('コイン付与エラー:', error);
+            console.error('メッセージ報酬付与エラー:', error);
         }
     },
 };

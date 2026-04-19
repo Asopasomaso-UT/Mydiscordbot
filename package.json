@@ -10,6 +10,7 @@
     "dotenv": "^16.6.1",
     "express": "^4.21.2",
     "mongoose": "^9.4.1",
-    "quickmongo": "^5.2.0"
+    "quickmongo": "^5.2.0",
+    "uuid": "^13.0.0"
   }
 }

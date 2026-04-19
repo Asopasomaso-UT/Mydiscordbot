@@ -12,7 +12,7 @@ const DataModel = mongoose.models.QuickData || mongoose.model('QuickData', dataS
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('janken')
-        .setDescription('コインを賭けてじゃんけん！勝てば3倍！')
+        .setDescription('コインを賭けてじゃんけん!')
         .addStringOption(option =>
             option.setName('手')
                 .setDescription('出す手を選んでください')
@@ -37,45 +37,54 @@ module.exports = {
         const userId = interaction.user.id;
 
         const moneyKey = `money_${guildId}_${userId}`;
-        const totalEarnedKey = `total_earned_${guildId}_${userId}`; // 累計額用キー
+        const totalEarnedKey = `total_earned_${guildId}_${userId}`;
+        const petKey = `pet_data_${guildId}_${userId}`;
 
         try {
-            // 2. 現在の所持金を確認
-            const userData = await DataModel.findOne({ id: moneyKey });
-            const currentMoney = userData ? (Number(userData.value) || 0) : 0;
+            // 1. 所持金とペットデータの確認
+            const [userData, petData] = await Promise.all([
+                DataModel.findOne({ id: moneyKey }),
+                DataModel.findOne({ id: petKey })
+            ]);
 
+            const currentMoney = userData ? (Number(userData.value) || 0) : 0;
             if (currentMoney < bet) {
-                return await interaction.editReply(`コインが足りません！ (現在の所持金: ${currentMoney.toLocaleString()} 💰)`);
+                return await interaction.editReply(`コインが足りません！ (残高: ${currentMoney.toLocaleString()} 💰)`);
             }
 
-            // 3. じゃんけんの判定
+            // 2. じゃんけん判定
             const choices = ['ぐー', 'ちょき', 'ぱー'];
             const botChoice = choices[Math.floor(Math.random() * choices.length)];
+            let result = (userChoice === botChoice) ? 'draw' : 
+                         ((userChoice === 'ぐー' && botChoice === 'ちょき') ||
+                          (userChoice === 'ちょき' && botChoice === 'ぱー') ||
+                          (userChoice === 'ぱー' && botChoice === 'ぐー')) ? 'win' : 'lose';
 
-            let result = ''; 
-            if (userChoice === botChoice) {
-                result = 'draw';
-            } else if (
-                (userChoice === 'ぐー' && botChoice === 'ちょき') ||
-                (userChoice === 'ちょき' && botChoice === 'ぱー') ||
-                (userChoice === 'ぱー' && botChoice === 'ぐー')
-            ) {
-                result = 'win';
-            } else {
-                result = 'lose';
-            }
+            // 3. ペット倍率の計算
+            let totalMultiplier = 1.0;
+            const pets = petData?.value?.pets || [];
+            const equippedIds = petData?.value?.equippedPetIds || [];
+            const equippedPets = pets.filter(p => equippedIds.includes(p.petId));
+            
+            equippedPets.forEach(p => {
+                totalMultiplier += (p.multiplier - 1);
+            });
 
-            // 4. 倍率計算とDB更新
+            // 4. 報酬の計算
             let changeAmount = 0;
-            let earnedAmount = 0; // 今回の「純粋な利益」
+            let earnedAmount = 0; // 累計額に加算する分
             let resultMessage = "";
             let color = "Grey";
 
             if (result === 'win') {
-                // 勝ったら3倍（+2倍の純利）
-                earnedAmount = bet * 2; 
+                // 基本の勝ち分（betの2倍）にペット倍率をかける
+                const baseProfit = bet * 2;
+                earnedAmount = Math.floor(baseProfit * totalMultiplier);
                 changeAmount = earnedAmount;
-                resultMessage = `🎉 **勝利！** 賭け金が **3倍** になりました！`;
+                
+                resultMessage = totalMultiplier > 1.0 
+                    ? `🎉 **勝利！** ペットの力(x${totalMultiplier.toFixed(2)})で報酬がアップしました！`
+                    : `🎉 **勝利！** 報酬を獲得しました！`;
                 color = "Gold";
             } else if (result === 'draw') {
                 changeAmount = 0;
@@ -87,25 +96,22 @@ module.exports = {
                 color = "Red";
             }
 
-            // --- DB更新処理 ---
-            
-            // 1. 所持金の更新
+            // 5. DB更新
             const updatedRecord = await DataModel.findOneAndUpdate(
                 { id: moneyKey },
                 { $inc: { value: changeAmount } },
                 { upsert: true, returnDocument: 'after' }
             );
 
-            // 2. 累計獲得額の更新（勝ったときのみ加算）
             if (earnedAmount > 0) {
                 await DataModel.findOneAndUpdate(
                     { id: totalEarnedKey },
                     { $inc: { value: earnedAmount } },
-                    { upsert: true, returnDocument: 'after' }
+                    { upsert: true }
                 );
             }
 
-            // 5. 結果表示
+            // 6. 結果表示
             const embed = new EmbedBuilder()
                 .setTitle('💰 じゃんけん')
                 .setColor(color)
@@ -115,6 +121,7 @@ module.exports = {
                     `━━━━━━━━━━━━━━`,
                     resultMessage,
                     `━━━━━━━━━━━━━━`,
+                    `倍率ボーナス: **x${totalMultiplier.toLocaleString()}**`,
                     `変動: **${changeAmount >= 0 ? "+" : ""}${changeAmount.toLocaleString()}** 💰`,
                     `現在の残高: **${(updatedRecord.value || 0).toLocaleString()}** 💰`
                 ].join('\n'))
