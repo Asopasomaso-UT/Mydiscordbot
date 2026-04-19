@@ -69,3 +69,5 @@ const EGG_CONFIG = {
     'legendary_egg': { label: 'Legendary Egg', price: 50000, rates: { 'Rare': 30, 'Legendary': 60, 'Mythic': 9.9999, 'Secret': 0.0001 } },
     'mythic_egg': { label: 'Mythic Egg', price: 200000, rates: { 'Legendary': 40, 'Mythic': 59.999, 'Secret': 0.001 } }
 };
+
+module.exports = { PET_MASTER, EGG_CONFIG };
