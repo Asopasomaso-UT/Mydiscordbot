@@ -10,6 +10,9 @@ module.exports = {
         .setDescription('装備中のペットにエンチャントを付与・強化します'),
 
     async execute(interaction) {
+        // 1. 最初に deferReply を実行して「インタラクション失敗」を防ぐ
+        await interaction.deferReply();
+
         const guildId = interaction.guild.id;
         const userId = interaction.user.id;
         const invKey = `pet_data_${guildId}_${userId}`;
@@ -26,14 +29,12 @@ module.exports = {
         const inventory = userData?.value?.inventory || {};
         const shieldCount = inventory['enchant_shield'] || 0;
 
-        // 1. 装備中のペットを抽出
         const equippedPets = pets.filter(p => equippedIds.includes(p.petId));
 
         if (equippedPets.length === 0) {
-            return interaction.reply({ content: 'ペットを装備していません。`/pets` で装備してから実行してください。', ephemeral: true });
+            return interaction.editReply({ content: 'ペットを装備していません。`/pets` で装備してから実行してください。' });
         }
 
-        // 2. どのペットをエンチャントするか選ばせる
         const selectEmbed = new EmbedBuilder()
             .setTitle('✨ エンチャントするペットを選択')
             .setDescription('現在装備中のペットから選択してください。')
@@ -44,31 +45,34 @@ module.exports = {
             .setPlaceholder('対象のペットを選択');
 
         equippedPets.forEach(p => {
-            const stageName = EVOLUTION_STAGES[p.level || 0].name;
+            const stageName = EVOLUTION_STAGES[p.level || 0]?.name || '';
             const enchantName = p.enchant ? ` | ${ENCHANT_TYPES[p.enchant.type].name} Lv.${p.enchant.level}` : ' | なし';
             selectMenu.addOptions({
-                label: `${stageName ? stageName + ' ' : ''}${p.name}`,
+                label: `${stageName} ${p.name}`.trim(),
                 description: `${p.rarity}${enchantName}`,
                 value: p.petId
             });
         });
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
-        const response = await interaction.reply({ embeds: [selectEmbed], components: [row], fetchReply: true });
+        // editReply を使う
+        const response = await interaction.editReply({ embeds: [selectEmbed], components: [row] });
 
         const collector = response.createMessageComponentCollector({ time: 60000 });
 
         collector.on('collect', async (i) => {
-            if (i.user.id !== userId) return;
+            if (i.user.id !== userId) return i.reply({ content: '他人の操作はできません', ephemeral: true });
 
-            // 選択されたペットを再特定
-            const targetPetId = i.values?.[0] || i.customId.split('_')[1];
-            const targetPet = pets.find(p => p.petId === targetPetId);
+            // 常にDBから最新の情報を取得（連続強化時のバグ防止）
+            const latestData = await DataModel.findOne({ id: invKey });
+            const latestPets = latestData?.value?.pets || [];
+            
+            const targetPetId = i.values?.[0] || i.customId.split('_').pop();
+            const targetPet = latestPets.find(p => p.petId === targetPetId);
             if (!targetPet) return;
 
             const currentEnchant = targetPet.enchant;
 
-            // --- 強化/付与の分岐ロジック ---
             if (i.customId === 'select_target_to_enchant') {
                 const menuEmbed = new EmbedBuilder()
                     .setTitle(`✨ エンチャント: ${targetPet.name}`)
@@ -77,16 +81,13 @@ module.exports = {
                 const menuRow = new ActionRowBuilder();
 
                 if (!currentEnchant) {
-                    // 新規付与
-                    menuEmbed.setDescription(`費用: **50,000** 💰\n装備中のペットにエンチャントを付与・強化します`);
+                    menuEmbed.setDescription(`費用: **50,000** 💰\nMimic(0.1%)やSecret Agent(1%)を狙えます。`);
                     menuRow.addComponents(
-                        new ButtonBuilder().setCustomId(`do_new_${targetPetId}`).setLabel('エンチャント').setStyle(ButtonStyle.Primary).setDisabled(currentMoney < 50000)
+                        new ButtonBuilder().setCustomId(`do_new_${targetPetId}`).setLabel('新規付与 (50k)').setStyle(ButtonStyle.Primary).setDisabled(currentMoney < 50000)
                     );
                 } else if (currentEnchant.level >= 5) {
-                    // MAX
                     menuEmbed.setDescription(`現在の能力: **${ENCHANT_TYPES[currentEnchant.type].name} (MAX)**`).setColor('Gold');
                 } else {
-                    // 強化
                     const config = ENCHANT_UPGRADE[currentEnchant.level];
                     menuEmbed.setDescription([
                         `現在の能力: **${ENCHANT_TYPES[currentEnchant.type].name} (Lv.${currentEnchant.level})**`,
@@ -102,10 +103,10 @@ module.exports = {
                 return i.update({ embeds: [menuEmbed], components: menuRow.components.length > 0 ? [menuRow] : [] });
             }
 
-            // --- 実行処理 (新規・付け直し) ---
+            // 実行処理（新規付与/強化）
             if (i.customId.startsWith('do_new_')) {
                 const newType = getRandomEnchant();
-                const updatedPets = pets.map(p => p.petId === targetPetId ? { ...p, enchant: { type: newType, level: 1 } } : p);
+                const updatedPets = latestPets.map(p => p.petId === targetPetId ? { ...p, enchant: { type: newType, level: 1 } } : p);
                 
                 await Promise.all([
                     DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: -50000 } }),
@@ -114,7 +115,6 @@ module.exports = {
                 return i.update({ content: `✨ **${ENCHANT_TYPES[newType].name}** Lv.1 を付与しました！`, embeds: [], components: [] });
             }
 
-            // --- 実行処理 (強化) ---
             if (i.customId.startsWith('do_up_')) {
                 const config = ENCHANT_UPGRADE[currentEnchant.level];
                 const isSuccess = Math.random() < config.success;
@@ -134,7 +134,7 @@ module.exports = {
                     }
                 }
 
-                const updatedPets = pets.map(p => p.petId === targetPetId ? { ...p, enchant: { ...p.enchant, level: finalLevel } } : p);
+                const updatedPets = latestPets.map(p => p.petId === targetPetId ? { ...p, enchant: { ...p.enchant, level: finalLevel } } : p);
                 await Promise.all([
                     DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: -config.cost } }),
                     DataModel.findOneAndUpdate({ id: invKey }, { 'value.pets': updatedPets })
