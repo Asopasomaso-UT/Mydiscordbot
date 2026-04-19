@@ -51,7 +51,7 @@ module.exports = {
             }));
 
             return new EmbedBuilder()
-                .setTitle(`🏆 ${interaction.guild.name} 累計獲得賞金TOP50`)
+                .setTitle(`🏆 ${interaction.guild.name} 累計獲得コインTOP50`)
                 .setDescription(rankingList.join('\n'))
                 .setColor('Gold')
                 .setFooter({ text: `ページ ${page + 1} / 2 (全${sortedData.length}名)` })
