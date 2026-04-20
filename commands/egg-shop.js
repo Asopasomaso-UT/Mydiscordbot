@@ -8,9 +8,9 @@ const DataModel = mongoose.models.QuickData;
 const EGG_EMOJI = {
     'common_egg': '🥚',
     'Uncommon_egg': '🟢',
-    'rare_egg': '🔵',
-    'legendary_egg': '🟡',
-    'mythic_egg': '🟣',
+    'Rare_egg': '🔵',
+    'Legendary_egg': '🟡',
+    'Mythic_egg': '🟣',
     'Slime_egg': '👽',
     'Exotic_egg': '💎'
 };

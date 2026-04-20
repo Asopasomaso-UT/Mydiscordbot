@@ -112,7 +112,7 @@ const EGG_CONFIG = {
             { name: 'アーサー王の馬', weight: 140 }
         ]
     },
-    'Slime_egg': {
+    'slime_egg': {
         name: 'Slime egg',
         price: 150000,
         contents: [
