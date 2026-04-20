@@ -17,9 +17,9 @@ function formatCoin(number) {
 function parseCoin(input) {
     if (typeof input === 'number') return input;
     if (!input) return 0;
-    const units = { 'm': 1e6, 'b': 1e9, 't': 1e12, 'qd': 1e15, 'qn': 1e18, 'sx': 1e21 };
+    const units = { 'M': 1e6, 'B': 1e9, 'T': 1e12, 'Qd': 1e15, 'Qn': 1e18, 'Sx': 1e21, 'Sp': 1e24, 'Oc': 1e27, 'No': 1e30, 'Dc': 1e33 };
     const cleanInput = input.toLowerCase().replace(/,/g, '');
-    const match = cleanInput.match(/^(\d+\.?\d*)(m|b|t|qd|qn|sx)?$/);
+    const match = cleanInput.match(/^(\d+\.?\d*)(M|B|T|Qd|Qn|Sx|Sp|Oc|No|Dc)?$/);
     if (!match) return parseInt(cleanInput) || 0;
     const value = parseFloat(match[1]);
     const unit = match[2];
