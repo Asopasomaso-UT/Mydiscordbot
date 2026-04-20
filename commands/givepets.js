@@ -17,11 +17,9 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('pet_name')
-                .setDescription('付与するペットを選択してください')
+                .setDescription('ペット名を入力して検索してください')
                 .setRequired(true)
-                .addChoices(
-                    ...Object.keys(PET_MASTER).slice(0, 25).map(name => ({ name: name, value: name }))
-                )
+                .setAutocomplete(true) // オートコンプリートを有効化
         )
         .addIntegerOption(option =>
             option.setName('amount')
@@ -36,46 +34,58 @@ module.exports = {
                 .setMaxValue(3)
         ),
 
+    /**
+     * オートコンプリートの処理
+     */
+    async autocomplete(interaction) {
+        const focusedValue = interaction.options.getFocused();
+        const choices = Object.keys(PET_MASTER);
+        
+        // ユーザーが入力した文字でフィルタリング
+        const filtered = choices.filter(choice => 
+            choice.toLowerCase().includes(focusedValue.toLowerCase())
+        );
+
+        // Discordの制限により25個までしか返せないので slice(0, 25)
+        await interaction.respond(
+            filtered.slice(0, 25).map(choice => ({ name: choice, value: choice }))
+        );
+    },
+
     async execute(interaction) {
-        // Ephemeralフラグで管理者のみに結果を表示
         await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
         const targetUser = interaction.options.getUser('target');
         const petName = interaction.options.getString('pet_name');
         const amount = interaction.options.getInteger('amount') || 1;
-        const evoLevel = interaction.options.getInteger('evo_level') || 0; // デフォルトはNormal
+        const evoLevel = interaction.options.getInteger('evo_level') || 0;
 
         const petInfo = PET_MASTER[petName];
-        if (!petInfo) return interaction.editReply('指定されたペットがマスタデータに見つかりません。');
+        if (!petInfo) return interaction.editReply(`エラー: 「${petName}」はマスタデータに存在しません。名前を確認してください。`);
 
         const guildId = interaction.guild.id;
         const petKey = `pet_data_${guildId}_${targetUser.id}`;
 
-        // 進化名の取得
         const evoNames = ['', 'Golden', 'Shiny', 'Neon'];
         const evoPrefix = evoNames[evoLevel] ? `[${evoNames[evoLevel]}] ` : '';
 
         try {
             const newPets = [];
-
             for (let i = 0; i < amount; i++) {
                 newPets.push({
                     petId: uuidv4(),
                     name: petName,
                     rarity: petInfo.rarity,
                     multiplier: petInfo.multiplier,
-                    evoLevel: evoLevel, // 進化段階を保存
-                    enchant: null,      // 初期状態はエンチャントなし
+                    evoLevel: evoLevel,
+                    enchant: null,
                     obtainedAt: Date.now()
                 });
             }
 
-            // DB更新 (upsert: true でデータがないユーザーにも対応)
             await DataModel.findOneAndUpdate(
                 { id: petKey },
-                { 
-                    $push: { 'value.pets': { $each: newPets } }
-                },
+                { $push: { 'value.pets': { $each: newPets } } },
                 { upsert: true, returnDocument: 'after' }
             );
 
