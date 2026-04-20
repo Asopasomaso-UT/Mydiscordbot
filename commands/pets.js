@@ -13,10 +13,16 @@ const EVOLUTION_STAGES = [
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペットの管理・合成を行います'),
+        .setDescription('ペットの管理・4体合成を行います'),
 
     async execute(interaction) {
-        await interaction.deferReply({ ephemeral: false });
+        // --- 修正1: どんな処理よりも先にこれを実行する ---
+        try {
+            await interaction.deferReply({ ephemeral: false });
+        } catch (err) {
+            console.error("deferReplyに失敗（タイムアウトなど）:", err);
+            return; // 応答できない場合はここで終了
+        }
 
         const guildId = interaction.guild.id;
         const userId = interaction.user.id;
@@ -49,15 +55,12 @@ module.exports = {
                         : '装備なし'
                 });
 
-            // --- エラー回避の核心部分 ---
-            // 1. 選択肢は最大25個までに制限する（新しい順に表示）
-            const displayPets = pets.slice(-25).reverse(); 
-            // 2. 選択可能な数は「表示数」「装備枠」「25」の最小値にする
+            const displayPets = pets.slice(-25).reverse();
             const maxSelectable = Math.min(displayPets.length, maxEquipSlot, 25);
 
             const selectMenu = new StringSelectMenuBuilder()
                 .setCustomId('pet_equip_toggle')
-                .setPlaceholder('装備するペットを選択（最大25匹表示）')
+                .setPlaceholder('装備するペットを選択')
                 .setMinValues(0)
                 .setMaxValues(maxSelectable || 1);
 
@@ -74,17 +77,23 @@ module.exports = {
 
             if (options.length > 0) selectMenu.addOptions(options);
 
-            const row1 = new ActionRowBuilder().addComponents(selectMenu);
-            const row2 = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('open_fusion_menu').setLabel('合成メニュー').setStyle(ButtonStyle.Primary).setEmoji('🧪')
-            );
-
-            return { embeds: [embed], components: [row1, row2] };
+            return { 
+                embeds: [embed], 
+                components: [
+                    new ActionRowBuilder().addComponents(selectMenu),
+                    new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId('open_fusion_menu').setLabel('合成メニュー').setStyle(ButtonStyle.Primary).setEmoji('🧪')
+                    )
+                ] 
+            };
         };
 
         try {
+            // --- 修正2: DB取得に時間がかかる可能性があるため、deferReplyの後に実行 ---
             let result = await DataModel.findOne({ id: petKey });
-            if (!result || !result.value?.pets?.length) return await interaction.editReply('ペットを持っていません。');
+            if (!result || !result.value?.pets?.length) {
+                return await interaction.editReply('ペットを持っていません。');
+            }
 
             const response = await interaction.editReply(createMainInterface(result.value));
             
@@ -95,7 +104,9 @@ module.exports = {
 
             collector.on('collect', async (i) => {
                 try {
-                    await i.deferUpdate();
+                    // コレクター内でも、重い処理の前に必ずこれを呼ぶ
+                    if (!i.deferred && !i.replied) await i.deferUpdate();
+
                     const latestDoc = await DataModel.findOne({ id: petKey });
                     const currentData = latestDoc.value;
 
@@ -112,7 +123,7 @@ module.exports = {
                         const fusionGroups = getFusionableGroups(currentData.pets);
                         if (fusionGroups.length === 0) {
                             return await i.followUp({ 
-                                content: '❌ 合成可能な4体のセット（同名・同ランク）がいません。', 
+                                content: '❌ 合成可能なセットがいません。', 
                                 flags: [MessageFlags.Ephemeral] 
                             });
                         }
@@ -121,7 +132,6 @@ module.exports = {
                             .setCustomId('execute_fusion')
                             .setPlaceholder('進化させるペットを選択');
 
-                        // 合成メニューも最大25種類までに制限
                         fusionGroups.slice(0, 25).forEach(g => {
                             fusionSelect.addOptions({
                                 label: `${g.evoName ? `[${g.evoName}] ` : ''}${g.name}`,
