@@ -100,7 +100,7 @@ module.exports = {
             // 表示処理（省略せずにしっかり記述）
             const rarityColors = {
                 'Common': 'Grey', 'Uncommon': 'Green', 'Rare': 'Blue',
-                'Epic': 'Purple', 'Legendary': 'Orange', 'Unique' : 'Indigo',
+                'Epic': 'Purple', 'Legendary': 'Orange', 'Unique' : 'Blue',
                 'Artifact' : 'Yellow', 'SECRET': 'LuminousVividPink'
             };
 
