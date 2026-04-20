@@ -43,6 +43,8 @@ const PET_MASTER = {
     'アソパソマソ': { rarity: 'Secret', multiplier: 130.00 },
     'Keyboard Crusher': { rarity: 'Secret', multiplier: 135.00 },
     'Angel of darkness': { rarity: 'Secret', multiplier: 150.00 }, 
+    'おにっぴ': { rarity: 'Secret', multiplier: 140.00 },
+    '野獣先輩': { rarity: 'Secret', multiplier: 114.51 },
 };
 
 // 卵ごとの設定
