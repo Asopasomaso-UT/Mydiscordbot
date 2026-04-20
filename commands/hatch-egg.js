@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
 const mongoose = require('mongoose');
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require('uuid'); // ID生成用
 const { PET_MASTER, EGG_CONFIG, SECRET_CONFIG } = require('../utils/Pet-data');
 
 const DataModel = mongoose.models.QuickData;
@@ -50,26 +50,22 @@ module.exports = {
             const eggKey = i.values[0];
             const config = EGG_CONFIG[eggKey];
 
-            // 最新の在庫確認
             const latestData = await DataModel.findOne({ id: invKey });
             if ((latestData?.value?.inventory?.[eggKey] || 0) <= 0) {
                 return i.update({ content: 'その卵はもう持っていないようです。', components: [] });
             }
 
-            // --- 孵化ロジック開始 ---
+            // --- 抽選ロジック ---
             let selectedPetName = "";
             let isSecret = false;
 
-            // 1. シークレット判定 (全卵共通)
             if (Math.random() < SECRET_CONFIG.CHANCE) {
                 const secrets = SECRET_CONFIG.PETS;
                 selectedPetName = secrets[Math.floor(Math.random() * secrets.length)];
                 isSecret = true;
             } else {
-                // 2. 通常抽選 (卵の中身から重み付け抽選)
                 const totalWeight = config.contents.reduce((sum, item) => sum + item.weight, 0);
                 let random = Math.random() * totalWeight;
-
                 for (const item of config.contents) {
                     if (random < item.weight) {
                         selectedPetName = item.name;
@@ -80,15 +76,19 @@ module.exports = {
             }
 
             const petInfo = PET_MASTER[selectedPetName];
+            
+            // 重要：ここで petId (識別番号) を付与
             const newPet = { 
                 petId: uuidv4(), 
                 name: selectedPetName, 
-                rarity: petInfo.rarity, 
+                rarity: isSecret ? 'SECRET' : petInfo.rarity, 
                 multiplier: petInfo.multiplier,
+                level: 1, // レベルシステム用
+                xp: 0,
                 obtainedAt: Date.now()
             };
 
-            // DB更新 (卵を減らし、ペットを追加)
+            // DB更新
             await DataModel.findOneAndUpdate(
                 { id: invKey }, 
                 { 
@@ -97,34 +97,23 @@ module.exports = {
                 }
             );
 
-            // 結果表示の設定
+            // 表示処理（省略せずにしっかり記述）
             const rarityColors = {
-                'Common': 'Grey',
-                'Uncommon': 'Green',
-                'Rare': 'Blue',
-                'Epic': 'Purple',
-                'Legendary': 'Orange',
-                'Unique' : 'Indigo',
-                'Artifact' : 'Yellow',
-                'SECRET': 'LuminousVividPink'
+                'Common': 'Grey', 'Uncommon': 'Green', 'Rare': 'Blue',
+                'Epic': 'Purple', 'Legendary': 'Orange', 'Unique' : 'Indigo',
+                'Artifact' : 'Yellow', 'SECRET': 'LuminousVividPink'
             };
 
             const resultEmbed = new EmbedBuilder()
                 .setTitle(isSecret ? '✨✨ SECRET DETECTED !! ✨✨' : '🐣 卵が孵った！')
-                .setDescription([
-                    `**${newPet.name}** が誕生しました！`,
-                    `━━━━━━━━━━━━━━`,
-                    `レアリティ: \`${newPet.rarity}\``,
-                    `コイン倍率: \`x${newPet.multiplier.toLocaleString()}\``
-                ].join('\n'))
+                .setDescription(`**${newPet.name}** が誕生しました！\nレアリティ: \`${newPet.rarity}\` | 倍率: \`x${newPet.multiplier}\``)
                 .setColor(rarityColors[newPet.rarity] || 'White')
                 .setTimestamp();
 
             await i.update({ content: 'パカッ！', embeds: [resultEmbed], components: [] });
             
-            // シークレット演出
             if (isSecret) {
-                await interaction.channel.send(`🎊 **OMG YOUR LUCK IS OP** ${interaction.user} が **${newPet.name} (SECRET)** を孵化させました！`);
+                await interaction.channel.send(`🎊 **OMG!** ${interaction.user} が **${newPet.name} (SECRET)** を孵化させました！`);
             }
         });
     }
