@@ -40,7 +40,7 @@ module.exports = {
             // SRに必要な条件の計算 (30, 40, 50...)
             const requiredRebirths = 30 + (srCount * 10); 
             // もらえるSCの計算 (1, 2, 3...)
-            const scReward = srCount + 1; 
+            const scReward = 50 + (srCount * 25); 
 
             // --- 1. スーパーリバース (SR) の判定 ---
             if (rebirths >= requiredRebirths) {

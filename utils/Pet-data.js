@@ -144,7 +144,7 @@ const SC_SHOP_ITEMS = {
     // 卵の販売
     'Exotic_egg': {
         name: 'Exotic egg',
-        price: 100,
+        price: 10,
         type: 'egg', // 種類を分ける
         Egg_key: 'Exotic egg'
     }
