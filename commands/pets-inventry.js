@@ -1,8 +1,9 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const DataModel = mongoose.models.QuickData;
 
+// 進化設定
 const EVOLUTION_STAGES = [
     { name: '', multiplier: 1 },
     { name: 'Golden', multiplier: 2 },
@@ -13,10 +14,10 @@ const EVOLUTION_STAGES = [
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペットの管理・合成を行います'),
+        .setDescription('ペットの管理・4体合成を行います'),
 
     async execute(interaction) {
-        // メインメッセージを「考え中」にする
+        // 全員に見えるように。タイムアウト防止のため先に保留
         await interaction.deferReply({ ephemeral: false });
 
         const guildId = interaction.guild.id;
@@ -38,7 +39,7 @@ module.exports = {
             const embed = new EmbedBuilder()
                 .setTitle(`🐾 ${interaction.user.username} のペットチーム`)
                 .setColor('Blue')
-                .setDescription(`最大装備枠: **${maxEquipSlot}** 匹\n現在のチーム合計倍率: **x${totalMultiplier.toLocaleString()}**`)
+                .setDescription(`最大装備枠: **${maxEquipSlot}** 匹\nチーム合計倍率: **x${totalMultiplier.toLocaleString()}**`)
                 .addFields({ 
                     name: `⚔️ 現在装備中 (${equippedPets.length} / ${maxEquipSlot})`, 
                     value: equippedPets.length > 0 
@@ -89,25 +90,29 @@ module.exports = {
 
             collector.on('collect', async (i) => {
                 try {
-                    // 全ての操作に対し、まず「処理中」の状態を確立する
-                    await i.deferUpdate();
-
+                    // 最新データを取得
                     const latestDoc = await DataModel.findOne({ id: petKey });
                     const currentData = latestDoc.value;
 
-                    // --- 1. 装備付け替え ---
+                    // 1. 装備付け替え
                     if (i.customId === 'pet_equip_toggle') {
+                        await i.deferUpdate(); // ここでDiscordに応答
                         const updated = await DataModel.findOneAndUpdate(
-                            { id: petKey }, { $set: { 'value.equippedPetIds': i.values } }, { new: true }
+                            { id: petKey }, 
+                            { $set: { 'value.equippedPetIds': i.values } }, 
+                            { returnDocument: 'after' } // 最新の書き方
                         );
                         await interaction.editReply(createMainInterface(updated.value));
                     }
 
-                    // --- 2. 合成メニューを開く ---
+                    // 2. 合成メニューを開く
                     if (i.customId === 'open_fusion_menu') {
                         const fusionGroups = getFusionableGroups(currentData.pets);
                         if (fusionGroups.length === 0) {
-                            return await i.followUp({ content: '❌ 合成可能な4体のセットがいません。', ephemeral: true });
+                            return await i.reply({ 
+                                content: '❌ 合成可能な4体のセットがいません。', 
+                                flags: [MessageFlags.Ephemeral] 
+                            });
                         }
 
                         const fusionSelect = new StringSelectMenuBuilder()
@@ -122,20 +127,24 @@ module.exports = {
                             });
                         });
 
-                        await i.followUp({ 
-                            content: '🧪 **進化させる種類を選んでください**', 
+                        await i.reply({ 
+                            content: '🧪 **どのペットを進化させますか？**', 
                             components: [new ActionRowBuilder().addComponents(fusionSelect)], 
-                            ephemeral: true 
+                            flags: [MessageFlags.Ephemeral] 
                         });
                     }
 
-                    // --- 3. 合成実行 (ここが失敗しやすいポイント) ---
+                    // 3. 合成実行 (クラフト)
                     if (i.customId === 'execute_fusion') {
+                        await i.deferUpdate(); // 選択したメニューを「処理中」にする
+
                         const [pName, pEvo] = i.values[0].split(':');
                         const evoLevel = parseInt(pEvo);
                         const targets = currentData.pets.filter(p => p.name === pName && (p.evoLevel || 0) === evoLevel).slice(0, 4);
 
-                        if (targets.length < 4) return; // すでに消費されている場合
+                        if (targets.length < 4) {
+                            return await i.followUp({ content: 'エラー: 素材が足りません。', flags: [MessageFlags.Ephemeral] });
+                        }
 
                         const targetIds = targets.map(t => t.petId);
                         const remainingPets = currentData.pets.filter(p => !targetIds.includes(p.petId));
@@ -154,13 +163,11 @@ module.exports = {
                                 $set: { 'value.pets': remainingPets },
                                 $pull: { 'value.equippedPetIds': { $in: targetIds } } 
                             },
-                            { new: true }
+                            { returnDocument: 'after' }
                         );
 
-                        // 重要なポイント：
-                        // i.followUp または i.editReply で「合成しました」と出し、
-                        // interaction.editReply で「メインのペット画面」を更新する。
-                        await i.editReply({ content: `✅ **${pName}** が進化しました！`, components: [] });
+                        // 成功メッセージを表示して、メインUIを更新
+                        await i.editReply({ content: `✅ **${pName}** を進化させました！`, components: [] });
                         await interaction.editReply(createMainInterface(updated.value));
                     }
                 } catch (err) {
