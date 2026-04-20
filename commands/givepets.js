@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { PET_MASTER } = require('../utils/Pet-data'); // マスタデータをインポート
+const { PET_MASTER } = require('../utils/Pet-data');
 
 const DataModel = mongoose.models.QuickData;
 
@@ -19,7 +19,6 @@ module.exports = {
             option.setName('pet_name')
                 .setDescription('付与するペットを選択してください')
                 .setRequired(true)
-                // PET_MASTERから名前を抽出して選択肢にする (最大25個まで)
                 .addChoices(
                     ...Object.keys(PET_MASTER).slice(0, 25).map(name => ({ name: name, value: name }))
                 )
@@ -28,15 +27,23 @@ module.exports = {
             option.setName('amount')
                 .setDescription('付与する個数')
                 .setMinValue(1)
-                .setMaxValue(10) // 一度の付与上限を10匹に制限（負荷防止）
+                .setMaxValue(10)
+        )
+        .addIntegerOption(option =>
+            option.setName('evo_level')
+                .setDescription('進化段階 (0:Normal, 1:Golden, 2:Shiny, 3:Neon)')
+                .setMinValue(0)
+                .setMaxValue(3)
         ),
 
     async execute(interaction) {
+        // Ephemeralフラグで管理者のみに結果を表示
         await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
         const targetUser = interaction.options.getUser('target');
         const petName = interaction.options.getString('pet_name');
         const amount = interaction.options.getInteger('amount') || 1;
+        const evoLevel = interaction.options.getInteger('evo_level') || 0; // デフォルトはNormal
 
         const petInfo = PET_MASTER[petName];
         if (!petInfo) return interaction.editReply('指定されたペットがマスタデータに見つかりません。');
@@ -44,38 +51,42 @@ module.exports = {
         const guildId = interaction.guild.id;
         const petKey = `pet_data_${guildId}_${targetUser.id}`;
 
+        // 進化名の取得
+        const evoNames = ['', 'Golden', 'Shiny', 'Neon'];
+        const evoPrefix = evoNames[evoLevel] ? `[${evoNames[evoLevel]}] ` : '';
+
         try {
             const newPets = [];
 
-            // 指定された個数分、新しいIDを持ったペットを生成
             for (let i = 0; i < amount; i++) {
                 newPets.push({
                     petId: uuidv4(),
                     name: petName,
                     rarity: petInfo.rarity,
                     multiplier: petInfo.multiplier,
-                    level: 1,
-                    xp: 0,
+                    evoLevel: evoLevel, // 進化段階を保存
+                    enchant: null,      // 初期状態はエンチャントなし
                     obtainedAt: Date.now()
                 });
             }
 
-            // DB更新 ($push と $each を使って配列に一括追加)
+            // DB更新 (upsert: true でデータがないユーザーにも対応)
             await DataModel.findOneAndUpdate(
                 { id: petKey },
                 { 
                     $push: { 'value.pets': { $each: newPets } }
                 },
-                { upsert: true }
+                { upsert: true, returnDocument: 'after' }
             );
 
             const embed = new EmbedBuilder()
                 .setTitle('🎁 ペット直接付与完了')
                 .setDescription(`${targetUser} にペットを付与しました。`)
                 .addFields(
-                    { name: 'ペット名', value: `**${petName}**`, inline: true },
+                    { name: 'ペット名', value: `**${evoPrefix}${petName}**`, inline: true },
                     { name: '個数', value: `**${amount}** 匹`, inline: true },
-                    { name: 'レアリティ', value: `\`${petInfo.rarity}\``, inline: true }
+                    { name: 'レアリティ', value: `\`${petInfo.rarity}\``, inline: true },
+                    { name: '進化段階', value: evoNames[evoLevel] || 'Normal', inline: true }
                 )
                 .setColor('Gold')
                 .setTimestamp();
