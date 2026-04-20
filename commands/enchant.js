@@ -10,8 +10,10 @@ module.exports = {
         .setDescription('装備中のペットにエンチャントを付与・強化します'),
 
     async execute(interaction) {
-        // 1. 最初に deferReply を実行して「インタラクション失敗」を防ぐ
-        await interaction.deferReply();
+        // 1. 最初に deferReply を実行して「Unknown interaction」を防ぐ
+        try {
+            await interaction.deferReply();
+        } catch (e) { return; }
 
         const guildId = interaction.guild.id;
         const userId = interaction.user.id;
@@ -45,8 +47,8 @@ module.exports = {
             .setPlaceholder('対象のペットを選択');
 
         equippedPets.forEach(p => {
-            const stageName = EVOLUTION_STAGES[p.level || 0]?.name || '';
-            const enchantName = p.enchant ? ` | ${ENCHANT_TYPES[p.enchant.type].name} Lv.${p.enchant.level}` : ' | なし';
+            const stageName = EVOLUTION_STAGES[p.evoLevel || 0]?.name || '';
+            const enchantName = p.enchant ? ` | ${ENCHANT_TYPES[p.enchant.type]?.name || p.enchant.type} Lv.${p.enchant.level}` : ' | なし';
             selectMenu.addOptions({
                 label: `${stageName} ${p.name}`.trim(),
                 description: `${p.rarity}${enchantName}`,
@@ -55,8 +57,10 @@ module.exports = {
         });
 
         const row = new ActionRowBuilder().addComponents(selectMenu);
-        // editReply を使う
-        const response = await interaction.editReply({ embeds: [selectEmbed], components: [row] });
+
+        // --- 修正箇所: fetchReply警告を回避する最新の書き方 ---
+        await interaction.editReply({ embeds: [selectEmbed], components: [row] });
+        const response = await interaction.fetchReply(); 
 
         const collector = response.createMessageComponentCollector({ time: 60000 });
 
@@ -81,16 +85,19 @@ module.exports = {
                 const menuRow = new ActionRowBuilder();
 
                 if (!currentEnchant) {
-                    menuEmbed.setDescription(`費用: **50,000** 💰\n装備中のペットにエンチャントを付与・強化します`);
+                    menuEmbed.setDescription(`費用: **50,000** 💰\n装備中のペットにエンチャントを付与します`);
                     menuRow.addComponents(
                         new ButtonBuilder().setCustomId(`do_new_${targetPetId}`).setLabel('エンチャント (50k)').setStyle(ButtonStyle.Primary).setDisabled(currentMoney < 50000)
                     );
                 } else if (currentEnchant.level >= 5) {
-                    menuEmbed.setDescription(`現在の能力: **${ENCHANT_TYPES[currentEnchant.type].name} (MAX)**`).setColor('Gold');
+                    menuEmbed.setDescription(`現在の能力: **${ENCHANT_TYPES[currentEnchant.type]?.name || currentEnchant.type} (MAX)**`).setColor('Gold');
+                    menuRow.addComponents(
+                        new ButtonBuilder().setCustomId(`do_new_${targetPetId}`).setLabel('付け直す (50k)').setStyle(ButtonStyle.Secondary).setDisabled(currentMoney < 50000)
+                    );
                 } else {
                     const config = ENCHANT_UPGRADE[currentEnchant.level];
                     menuEmbed.setDescription([
-                        `現在の能力: **${ENCHANT_TYPES[currentEnchant.type].name} (Lv.${currentEnchant.level})**`,
+                        `現在の能力: **${ENCHANT_TYPES[currentEnchant.type]?.name || currentEnchant.type} (Lv.${currentEnchant.level})**`,
                         `次への成功率: **${config.success * 100}%**`,
                         `費用: **${config.cost.toLocaleString()}** 💰`,
                         `所持シールド: **${shieldCount}** 枚 🛡️`
@@ -100,7 +107,7 @@ module.exports = {
                         new ButtonBuilder().setCustomId(`do_new_${targetPetId}`).setLabel('付け直す (50k)').setStyle(ButtonStyle.Secondary).setDisabled(currentMoney < 50000)
                     );
                 }
-                return i.update({ embeds: [menuEmbed], components: menuRow.components.length > 0 ? [menuRow] : [] });
+                return i.update({ embeds: [menuEmbed], components: [menuRow] });
             }
 
             // 実行処理（新規付与/強化）
