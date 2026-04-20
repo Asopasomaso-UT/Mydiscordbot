@@ -5,104 +5,116 @@ const DataModel = mongoose.models.QuickData;
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('所持しているペットの確認と装備の変更を行います'),
+        .setDescription('ペットの装備管理（スーパーリバース回数に応じて枠が増加します）'),
 
     async execute(interaction) {
-        // 1. 保留応答
+        // Ephemeral（自分にだけ見える）で応答を保留
         await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
 
         const guildId = interaction.guild.id;
         const userId = interaction.user.id;
         const petKey = `pet_data_${guildId}_${userId}`;
 
-        try {
-            // 2. データの取得
-            const result = await DataModel.findOne({ id: petKey });
-            const data = result?.value || {};
-            
-            const pets = data.pets || [];
-            const equippedIds = data.equippedPetIds || [];
-            const srCount = data.superRebirthCount || 0;
-
-            // 3. 最大装備枠の計算 (初期3 + SR回数)
+        /**
+         * 最新データに基づいてエンベッドとコンポーネントを生成する内部関数
+         */
+        const createPetsInterface = (currentData) => {
+            const pets = currentData.pets || [];
+            const equippedIds = currentData.equippedPetIds || [];
+            const srCount = currentData.superRebirthCount || 0;
             const maxEquipSlot = 3 + srCount;
 
-            if (pets.length === 0) {
-                return await interaction.editReply('ペットを1匹も持っていません。卵を孵化させてみましょう！');
-            }
-
-            // 4. エンベデッドの作成
+            // 1. 上の欄：装備中のペットをフィルタリングして表示
+            const equippedPets = pets.filter(p => equippedIds.includes(p.petId));
+            
             const embed = new EmbedBuilder()
-                .setTitle(`🐾 ${interaction.user.username} のペット一覧`)
-                .setDescription(`現在の最大装備枠: **${maxEquipSlot}** 匹\n下のメニューから装備するペットを選択してください（複数選択可）。`)
+                .setTitle(`🐾 ${interaction.user.username} のペットチーム`)
+                .setDescription(`現在の最大装備枠: **${maxEquipSlot}** 匹 (初期3 + SR数:${srCount})`)
                 .setColor('Blue')
+                .addFields({ 
+                    name: `⚔️ 現在装備中 (${equippedPets.length} / ${maxEquipSlot})`, 
+                    value: equippedPets.length > 0 
+                        ? equippedPets.map(p => {
+                            const enchantInfo = p.enchant ? ` \`Lv.${p.enchant.level} ${p.enchant.type}\`` : '';
+                            return `✅ **${p.name}** [${p.rarity}]${enchantInfo}`;
+                        }).join('\n')
+                        : '装備しているペットはいません。'
+                })
                 .setTimestamp();
 
-            const petListString = pets.map(p => {
-                const isEquipped = equippedIds.includes(p.petId) ? '✅' : '❌';
-                const enchantText = p.enchant ? ` [${p.enchant.type} Lv.${p.enchant.level}]` : '';
-                return `${isEquipped} **${p.name}** (${p.rarity})${enchantText}`;
-            }).join('\n');
-
-            embed.addFields({ name: '所持ペット', value: petListString || 'なし' });
-
-            // 5. セレクトメニューの作成
-            // ここが修正の肝：maxValues を現在の枠数に合わせる
+            // 2. 下のボックス：全ペットから選択するメニュー
+            // Discordの制限: maxValuesは選択肢の数または装備枠の小さい方にする
+            const selectLimit = Math.min(pets.length, maxEquipSlot);
+            
             const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId('pet_equip_select')
-                .setPlaceholder('装備するペットを選択')
+                .setCustomId('pet_equip_toggle')
+                .setPlaceholder('装備するペットをチェック（枠数まで選択可能）')
                 .setMinValues(0)
-                .setMaxValues(Math.min(pets.length, maxEquipSlot));
+                .setMaxValues(selectLimit || 1); // 0だとエラーになるため最低1
 
-            // オプションの追加とエラー回避ロジック
-            let defaultCount = 0;
-            const options = pets.map(p => {
-                const isEquipped = equippedIds.includes(p.petId);
-                let isDefault = false;
+            // 選択肢の作成
+            const options = pets.map(p => ({
+                label: p.name,
+                description: `レア: ${p.rarity}${p.enchant ? ` | ${p.enchant.type}付` : ''}`,
+                value: p.petId,
+                default: equippedIds.includes(p.petId) // 装備中ならチェックを入れる
+            }));
 
-                // 装備中かつ、枠内に収まっている場合のみデフォルト設定
-                if (isEquipped && defaultCount < maxEquipSlot) {
-                    isDefault = true;
-                    defaultCount++;
-                }
-
-                return {
-                    label: p.name,
-                    description: `レア度: ${p.rarity}${p.enchant ? ` | エンチャント付` : ''}`,
-                    value: p.petId,
-                    default: isDefault
-                };
-            });
-
-            selectMenu.addOptions(options);
+            if (options.length > 0) {
+                selectMenu.addOptions(options);
+            } else {
+                selectMenu.addOptions([{ label: 'ペットがいません', value: 'none', disabled: true }]);
+            }
 
             const row = new ActionRowBuilder().addComponents(selectMenu);
+            return { embeds: [embed], components: [row] };
+        };
 
-            const response = await interaction.editReply({
-                embeds: [embed],
-                components: [row]
+        try {
+            // データの取得
+            const result = await DataModel.findOne({ id: petKey });
+            if (!result || !result.value?.pets?.length) {
+                return await interaction.editReply('ペットを1匹も持っていません。まずは卵を孵化させましょう！');
+            }
+
+            // 初回表示
+            const ui = createPetsInterface(result.value);
+            const response = await interaction.editReply({ 
+                embeds: ui.embeds, 
+                components: ui.components 
             });
 
-            // 6. コレクターで装備変更処理
-            const collector = response.createMessageComponentCollector({ time: 60000 });
+            // コレクターの作成（3分間有効）
+            const collector = response.createMessageComponentCollector({ time: 180000 });
 
             collector.on('collect', async (i) => {
-                if (i.customId === 'pet_equip_select') {
+                if (i.customId === 'pet_equip_toggle') {
+                    // 選択されたリストで装備IDを更新
                     const newEquippedIds = i.values;
 
-                    // DB更新
-                    await DataModel.findOneAndUpdate(
+                    // DBに保存
+                    const updatedDoc = await DataModel.findOneAndUpdate(
                         { id: petKey },
-                        { 'value.equippedPetIds': newEquippedIds }
+                        { $set: { 'value.equippedPetIds': newEquippedIds } },
+                        { new: true }
                     );
 
-                    await i.update({
-                        content: `✅ 装備を更新しました！（${newEquippedIds.length}匹装備中）`,
-                        components: [] // 更新後はメニューを消す（連打防止）
-                    });
+                    // 最新データでUIを再構築してメッセージを更新（i.updateを使う）
+                    const nextUI = createPetsInterface(updatedDoc.value);
                     
-                    collector.stop();
+                    await i.update({
+                        embeds: nextUI.embeds,
+                        components: nextUI.components
+                    });
                 }
+            });
+
+            // 時間切れになったら操作不能にする
+            collector.on('end', () => {
+                interaction.editReply({ 
+                    content: '💡 セッションが終了しました。再度管理するには `/pets` を実行してください。', 
+                    components: [] 
+                }).catch(() => null);
             });
 
         } catch (error) {
