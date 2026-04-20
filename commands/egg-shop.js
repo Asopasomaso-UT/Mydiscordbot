@@ -6,11 +6,13 @@ const { formatCoin } = require('../utils/formatHelper');
 const DataModel = mongoose.models.QuickData;
 
 const EGG_EMOJI = {
-    'basic_egg': '🥚',
+    'common_egg': '🥚',
+    'Uncommon_egg': '🟢',
     'rare_egg': '🔵',
     'legendary_egg': '🟡',
     'mythic_egg': '🟣',
-    'secret_egg_pack': '💎'
+    'Slime_egg': '👽',
+    'Exotic_egg': '💎'
 };
 
 module.exports = {

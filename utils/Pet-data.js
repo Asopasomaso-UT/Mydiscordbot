@@ -6,12 +6,14 @@ const PET_MASTER = {
     '野良猫': { rarity: 'Common', multiplier: 1.05 },
     '小鳥': { rarity: 'Common', multiplier: 1.05 },
     //Uncommon
+    'キラキラスライム': { rarity: 'UnCommon', multiplier: 1.10 },
     '三毛猫': { rarity: 'Uncommon', multiplier: 1.10 },
     'シマリス': { rarity: 'UnCommon', multiplier: 1.10 },
     '子豚': { rarity: 'UnCommon', multiplier: 1.10 },
     'ウサギ': { rarity: 'Uncommon', multiplier: 1.10 },
     'ペンギン': { rarity: 'Uncommon', multiplier: 1.10 },
     //Rare
+    'レアスライム': { rarity: 'Rare', multiplier: 1.25 },
     'シロクマ': { rarity: 'Rare', multiplier: 1.25 },
     'レッサーパンダ': { rarity: 'Rare', multiplier: 1.25 },
     '鷹': { rarity: 'Rare', multiplier: 1.25 },
@@ -19,7 +21,9 @@ const PET_MASTER = {
     'キツネ': { rarity: 'Rare', multiplier: 1.25 },
     //Epic
     '人魚': { rarity: 'Epic', multiplier: 1.40 },
+    'スライムの英雄': { rarity: 'Epic', multiplier: 1.40 },
     //Legendary
+    'レジェンドスライム': { rarity: 'Legendary', multiplier: 1.50 },
     'フェニックス': { rarity: 'Legendary', multiplier: 1.50 },
     'ユニコーン': { rarity: 'Legendary', multiplier: 1.50 },
     '白虎': { rarity: 'Legendary', multiplier: 1.50 },
@@ -27,6 +31,7 @@ const PET_MASTER = {
     'グリフィン': { rarity: 'Legendary', multiplier: 1.50 },
     '半魚人': { rarity: 'Legendary', multiplier: 1.50 },
     //Mythic
+    '神話のスライム': { rarity: 'Myrhic', multiplier: 2.00 },
     'バハムート': { rarity: 'Myrhic', multiplier: 2.00 },
     'ゼウスの鷲': { rarity: 'Mythic', multiplier: 2.00 },
     'ケルベロス': { rarity: 'Mythic', multiplier: 2.00 },
@@ -34,8 +39,10 @@ const PET_MASTER = {
     'アーサー王の馬': { rarity: 'Mythic', multiplier: 2.00 },
     '魚人': { rarity: 'Mythic', multiplier: 2.00 },   
     //Unique
+    'ドラクエスライム': { rarity: 'Unique', multiplier: 4.00 },
     '海蛇': { rarity: 'Unique', multiplier: 4.00 },
     //Artifact
+    'Minecraft slime': { rarity: 'Artifact', multiplier: 25.00 },
     'シーモンキー': { rarity: 'Artifact', multiplier: 10.00 },
     //Secret
     '首無し騎士': { rarity: 'Secret', multiplier: 75.00 },
@@ -103,6 +110,20 @@ const EGG_CONFIG = {
             { name: 'ゼウスの鷲', weight: 75 },
             { name: 'リヴァイアサン', weight: 750 },
             { name: 'アーサー王の馬', weight: 140 }
+        ]
+    },
+    'Slime_egg': {
+        name: 'Slime egg',
+        price: 150000,
+        contents: [
+            { name: 'スライム', weight: 5 },
+            { name: 'キラキラスライム', weight: 5 },
+            { name: 'レアスライム', weight: 5 },
+            { name: 'スライムの英雄', weight: 5 },
+            { name: 'レジェンドスライム', weight: 5 },
+            { name: '神話のスライム', weight: 5 },
+            { name: 'ドラクエスライム', weight: 5 },
+            { name: 'Minecraft slime', weight: 5 }
         ]
     },
     'Exotic_egg': {
