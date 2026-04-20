@@ -5,8 +5,14 @@ const { PET_MASTER } = require('../utils/Pet-data');
 
 const DataModel = mongoose.models.QuickData;
 
-// エンチャントのリスト（オートコンプリート用）
-const ENCHANT_TYPES = ['Power', 'Lucky', 'Coins', 'Speed', 'Diamond'];
+// --- 提供されたエンチャント設定 ---
+const ENCHANT_TYPES = {
+    'power': { name: 'Power', desc: 'ペット倍率アップ' },
+    'secret_agent': { name: 'Secret Agent', desc: 'シークレット確率アップ' },
+    'energy': { name: 'Energy', desc: '獲得経験値(XP)ブースト' },
+    'special_hatch': { name: 'Special Hatch', desc: '孵化時にクラフト済みが出る可能性' },
+    'mimic': { name: 'Mimic', desc: 'ペット倍率が超大幅アップ' }
+};
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -20,13 +26,13 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('pet_name')
-                .setDescription('ペット名を入力して検索してください')
+                .setDescription('ペット名を入力して検索')
                 .setRequired(true)
                 .setAutocomplete(true)
         )
         .addIntegerOption(option =>
             option.setName('amount')
-                .setDescription('付与する個数')
+                .setDescription('個数 (1-10)')
                 .setMinValue(1)
                 .setMaxValue(10)
         )
@@ -38,18 +44,18 @@ module.exports = {
         )
         .addStringOption(option =>
             option.setName('enchant_type')
-                .setDescription('エンチャントの種類を選択 (空欄でなし)')
+                .setDescription('エンチャントを選択')
                 .setAutocomplete(true)
         )
         .addIntegerOption(option =>
             option.setName('enchant_level')
-                .setDescription('エンチャントのレベル (1-5)')
+                .setDescription('エンチャントレベル (1-5)')
                 .setMinValue(1)
                 .setMaxValue(5)
         ),
 
     /**
-     * オートコンプリートの処理
+     * オートコンプリート: ペット名とエンチャント名の両方に対応
      */
     async autocomplete(interaction) {
         const focusedOption = interaction.options.getFocused(true);
@@ -58,7 +64,8 @@ module.exports = {
         if (focusedOption.name === 'pet_name') {
             choices = Object.keys(PET_MASTER);
         } else if (focusedOption.name === 'enchant_type') {
-            choices = ENCHANT_TYPES;
+            // ID（キー）ではなく、表示名（Powerなど）をリストアップ
+            choices = Object.values(ENCHANT_TYPES).map(e => e.name);
         }
 
         const filtered = choices.filter(choice => 
@@ -71,7 +78,6 @@ module.exports = {
     },
 
     async execute(interaction) {
-        // タイムアウト対策: 最初に必ずdeferReply
         try {
             await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
         } catch (e) { return; }
@@ -80,20 +86,19 @@ module.exports = {
         const petName = interaction.options.getString('pet_name');
         const amount = interaction.options.getInteger('amount') || 1;
         const evoLevel = interaction.options.getInteger('evo_level') || 0;
-        const enchantType = interaction.options.getString('enchant_type');
+        const enchantName = interaction.options.getString('enchant_type');
         const enchantLevel = interaction.options.getInteger('enchant_level') || 1;
 
         const petInfo = PET_MASTER[petName];
-        if (!petInfo) return interaction.editReply(`エラー: 「${petName}」はマスタデータに存在しません。`);
+        if (!petInfo) return interaction.editReply(`❌ 「${petName}」が見つかりません。`);
+
+        // エンチャント名の逆引き（表示名からIDを取得）
+        const enchantKey = Object.keys(ENCHANT_TYPES).find(key => ENCHANT_TYPES[key].name === enchantName);
+        const enchantData = enchantKey ? { type: ENCHANT_TYPES[enchantKey].name, level: enchantLevel } : null;
 
         const guildId = interaction.guild.id;
         const petKey = `pet_data_${guildId}_${targetUser.id}`;
-
         const evoNames = ['', 'Golden', 'Shiny', 'Neon'];
-        const evoPrefix = evoNames[evoLevel] ? `[${evoNames[evoLevel]}] ` : '';
-
-        // エンチャントオブジェクトの構築
-        const enchantData = enchantType ? { type: enchantType, level: enchantLevel } : null;
 
         try {
             const newPets = [];
@@ -104,7 +109,7 @@ module.exports = {
                     rarity: petInfo.rarity,
                     multiplier: petInfo.multiplier,
                     evoLevel: evoLevel,
-                    enchant: enchantData, // 指定があれば追加
+                    enchant: enchantData,
                     obtainedAt: Date.now()
                 });
             }
@@ -117,25 +122,25 @@ module.exports = {
 
             const embed = new EmbedBuilder()
                 .setTitle('🎁 ペット直接付与完了')
-                .setDescription(`${targetUser} にペットを付与しました。`)
+                .setColor('Gold')
+                .setThumbnail(targetUser.displayAvatarURL())
                 .addFields(
-                    { name: 'ペット名', value: `**${evoPrefix}${petName}**`, inline: true },
-                    { name: '個数', value: `**${amount}** 匹`, inline: true },
-                    { name: '進化段階', value: evoNames[evoLevel] || 'Normal', inline: true },
+                    { name: '👤 対象者', value: `${targetUser}`, inline: true },
+                    { name: '🐾 ペット', value: `**${evoNames[evoLevel] ? `[${evoNames[evoLevel]}] ` : ''}${petName}**`, inline: true },
+                    { name: '📦 個数', value: `${amount} 匹`, inline: true },
                     { 
-                        name: 'エンチャント', 
-                        value: enchantData ? `\`${enchantData.type} Lv.${enchantData.level}\`` : 'なし', 
-                        inline: true 
+                        name: '✨ エンチャント', 
+                        value: enchantData ? `**${enchantData.type}** (Lv.${enchantData.level})\n*${ENCHANT_TYPES[enchantKey].desc}*` : 'なし', 
+                        inline: false 
                     }
                 )
-                .setColor('Gold')
                 .setTimestamp();
 
             await interaction.editReply({ embeds: [embed] });
 
         } catch (error) {
             console.error('Givepet Error:', error);
-            await interaction.editReply('ペットの付与中にエラーが発生しました。');
+            await interaction.editReply('❌ 付与中にDBエラーが発生しました。');
         }
     },
 };
