@@ -139,3 +139,57 @@ module.exports = {
 
             // ペット選択処理
             if (i.customId.startsWith('trade_select_')) {
+                tradeState[i.user.id].pets = tradeState[i.user.id].data.pets.filter(p => i.values.includes(p.petId));
+                // すり替え防止: 片方が変更したら全員の確定をリセット
+                tradeState[initiator.id].accepted = false;
+                tradeState[target.id].accepted = false;
+                
+                await interaction.editReply({ embeds: [createTradeEmbed()], components: createComponents() });
+            }
+
+            // 確定ボタン処理
+            if (i.customId.startsWith('trade_confirm_')) {
+                if (tradeState[i.user.id].pets.length === 0) {
+                    return i.followUp({ content: "ペットを1匹以上選択してください。", flags: [MessageFlags.Ephemeral] });
+                }
+                
+                tradeState[i.user.id].accepted = true;
+                await interaction.editReply({ embeds: [createTradeEmbed()], components: createComponents() });
+
+                // 双方が確定したら終了
+                if (tradeState[initiator.id].accepted && tradeState[target.id].accepted) {
+                    collector.stop('success');
+                }
+            }
+        });
+
+        collector.on('end', async (_, reason) => {
+            client.tradeSessions.delete(initiator.id);
+            client.tradeSessions.delete(target.id);
+
+            if (reason === 'success') {
+                try {
+                    const initiatorSelectedIds = tradeState[initiator.id].pets.map(p => p.petId);
+                    const targetSelectedIds = tradeState[target.id].pets.map(p => p.petId);
+
+                    await Promise.all([
+                        DataModel.findOneAndUpdate({ id: initiatorKey }, {
+                            $pull: { 'value.pets': { petId: { $in: initiatorSelectedIds } } },
+                            $push: { 'value.pets': { $each: tradeState[target.id].pets } }
+                        }),
+                        DataModel.findOneAndUpdate({ id: targetKey }, {
+                            $pull: { 'value.pets': { petId: { $in: targetSelectedIds } } },
+                            $push: { 'value.pets': { $each: tradeState[initiator.id].pets } }
+                        })
+                    ]);
+                    await interaction.editReply({ content: `✅ **トレード成立！**\n交換が完了しました。`, embeds: [], components: [] });
+                } catch (e) {
+                    console.error(e);
+                    await interaction.editReply({ content: "❌ データベースエラーが発生しました。", embeds: [], components: [] });
+                }
+            } else {
+                await interaction.editReply({ content: "🚫 トレードが中止またはタイムアウトしました。", embeds: [], components: [] });
+            }
+        });
+    }
+};
