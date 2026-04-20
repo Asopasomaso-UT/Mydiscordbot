@@ -3,21 +3,20 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const DataModel = mongoose.models.QuickData;
 
-// 進化設定：Normal(0)の時は名前を空にする
 const EVOLUTION_STAGES = [
-    { name: '', multiplier: 1 },         // Level 0
-    { name: 'Golden', multiplier: 2 },   // Level 1
-    { name: 'Shiny', multiplier: 4 },    // Level 2
-    { name: 'Neon', multiplier: 8 }      // Level 3
+    { name: '', multiplier: 1 },
+    { name: 'Golden', multiplier: 2 },
+    { name: 'Shiny', multiplier: 4 },
+    { name: 'Neon', multiplier: 8 }
 ];
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペットの管理・4体合成を行います'),
+        .setDescription('ペットの管理・合成を行います'),
 
     async execute(interaction) {
-        // 全員に見えるモード。処理遅延によるエラーを防ぐため先に保留応答
+        // メインメッセージを「考え中」にする
         await interaction.deferReply({ ephemeral: false });
 
         const guildId = interaction.guild.id;
@@ -27,18 +26,26 @@ module.exports = {
         const createMainInterface = (currentData) => {
             const pets = currentData.pets || [];
             const equippedIds = currentData.equippedPetIds || [];
-            const maxEquipSlot = 3 + (currentData.superRebirthCount || 0);
+            const srCount = currentData.superRebirthCount || 0;
+            const maxEquipSlot = 3 + srCount;
             const equippedPets = pets.filter(p => equippedIds.includes(p.petId));
             
+            let totalMultiplier = 0;
+            equippedPets.forEach(p => {
+                totalMultiplier += (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
+            });
+
             const embed = new EmbedBuilder()
-                .setTitle(`🐾 ${interaction.user.username} のペット管理`)
+                .setTitle(`🐾 ${interaction.user.username} のペットチーム`)
                 .setColor('Blue')
+                .setDescription(`最大装備枠: **${maxEquipSlot}** 匹\n現在のチーム合計倍率: **x${totalMultiplier.toLocaleString()}**`)
                 .addFields({ 
                     name: `⚔️ 現在装備中 (${equippedPets.length} / ${maxEquipSlot})`, 
                     value: equippedPets.length > 0 
                         ? equippedPets.map(p => {
                             const evo = EVOLUTION_STAGES[p.evoLevel || 0].name;
-                            return `✅ **${evo ? `[${evo}] ` : ''}${p.name}**`;
+                            const enchant = p.enchant ? ` \`[${p.enchant.type} Lv.${p.enchant.level}]\`` : '';
+                            return `✅ **${evo ? `[${evo}] ` : ''}${p.name}**${enchant}`;
                         }).join('\n')
                         : '装備なし'
                 });
@@ -51,10 +58,10 @@ module.exports = {
 
             const options = pets.map(p => {
                 const evo = EVOLUTION_STAGES[p.evoLevel || 0].name;
-                const displayMult = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
+                const finalMult = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
                 return {
                     label: `${evo ? `[${evo}] ` : ''}${p.name}`,
-                    description: `レア: ${p.rarity} | 倍率: x${displayMult.toLocaleString()}`,
+                    description: `倍率: x${finalMult.toLocaleString()}${p.enchant ? ` | ${p.enchant.type}Lv.${p.enchant.level}` : ''}`,
                     value: p.petId,
                     default: equippedIds.includes(p.petId)
                 };
@@ -62,45 +69,33 @@ module.exports = {
 
             if (options.length > 0) selectMenu.addOptions(options);
 
-            const row1 = new ActionRowBuilder().addComponents(selectMenu);
-            const row2 = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('open_fusion_menu').setLabel('合成メニュー').setStyle(ButtonStyle.Primary).setEmoji('🧪')
-            );
-
-            return { embeds: [embed], components: [row1, row2] };
+            return { embeds: [embed], components: [
+                new ActionRowBuilder().addComponents(selectMenu),
+                new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('open_fusion_menu').setLabel('合成メニュー').setStyle(ButtonStyle.Primary).setEmoji('🧪')
+                )
+            ] };
         };
 
         try {
             let result = await DataModel.findOne({ id: petKey });
             if (!result || !result.value?.pets?.length) return await interaction.editReply('ペットを持っていません。');
 
-            let userData = result.value;
-
-            // ID未付与データの修復
-            let needsSave = false;
-            userData.pets = userData.pets.map(p => {
-                if (!p.petId) { p.petId = uuidv4(); needsSave = true; }
-                return p;
-            });
-            if (needsSave) {
-                await DataModel.findOneAndUpdate({ id: petKey }, { $set: { "value.pets": userData.pets } });
-            }
-
-            const response = await interaction.editReply(createMainInterface(userData));
-
+            const response = await interaction.editReply(createMainInterface(result.value));
             const collector = response.createMessageComponentCollector({ 
                 filter: i => i.user.id === interaction.user.id,
                 time: 300000 
             });
 
             collector.on('collect', async (i) => {
-                // エラー回避のため、まず「処理中」の状態にする
-                if (!i.deferred && !i.replied) await i.deferUpdate();
-
                 try {
+                    // 全ての操作に対し、まず「処理中」の状態を確立する
+                    await i.deferUpdate();
+
                     const latestDoc = await DataModel.findOne({ id: petKey });
                     const currentData = latestDoc.value;
 
+                    // --- 1. 装備付け替え ---
                     if (i.customId === 'pet_equip_toggle') {
                         const updated = await DataModel.findOneAndUpdate(
                             { id: petKey }, { $set: { 'value.equippedPetIds': i.values } }, { new: true }
@@ -108,35 +103,39 @@ module.exports = {
                         await interaction.editReply(createMainInterface(updated.value));
                     }
 
+                    // --- 2. 合成メニューを開く ---
                     if (i.customId === 'open_fusion_menu') {
                         const fusionGroups = getFusionableGroups(currentData.pets);
                         if (fusionGroups.length === 0) {
-                            return await i.followUp({ content: '❌ 合成可能な4体のセット（同名・同ランク）がいません！', ephemeral: true });
+                            return await i.followUp({ content: '❌ 合成可能な4体のセットがいません。', ephemeral: true });
                         }
 
                         const fusionSelect = new StringSelectMenuBuilder()
                             .setCustomId('execute_fusion')
-                            .setPlaceholder('進化させるペットを選んでください');
+                            .setPlaceholder('進化させるペットを選択');
 
-                        fusionGroups.forEach(group => {
+                        fusionGroups.forEach(g => {
                             fusionSelect.addOptions({
-                                label: `${group.evoName ? `[${group.evoName}] ` : ''}${group.name}`,
-                                description: `4体を消費して ${group.nextEvoName} へ進化`,
-                                value: `${group.name}:${group.evoLevel}`
+                                label: `${g.evoName ? `[${g.evoName}] ` : ''}${g.name}`,
+                                description: `4体を消費して ${g.nextEvoName} へ進化`,
+                                value: `${g.name}:${g.evoLevel}`
                             });
                         });
 
-                        const row = new ActionRowBuilder().addComponents(fusionSelect);
-                        // 合成選択メニューは本人にだけ見えるように ephemeral で出す
-                        await i.followUp({ content: '🧪 **進化させる種類を選んでください**', components: [row], ephemeral: true });
+                        await i.followUp({ 
+                            content: '🧪 **進化させる種類を選んでください**', 
+                            components: [new ActionRowBuilder().addComponents(fusionSelect)], 
+                            ephemeral: true 
+                        });
                     }
 
+                    // --- 3. 合成実行 (ここが失敗しやすいポイント) ---
                     if (i.customId === 'execute_fusion') {
                         const [pName, pEvo] = i.values[0].split(':');
                         const evoLevel = parseInt(pEvo);
                         const targets = currentData.pets.filter(p => p.name === pName && (p.evoLevel || 0) === evoLevel).slice(0, 4);
 
-                        if (targets.length < 4) return await i.followUp({ content: 'エラー：対象が足りなくなりました', ephemeral: true });
+                        if (targets.length < 4) return; // すでに消費されている場合
 
                         const targetIds = targets.map(t => t.petId);
                         const remainingPets = currentData.pets.filter(p => !targetIds.includes(p.petId));
@@ -158,13 +157,14 @@ module.exports = {
                             { new: true }
                         );
 
-                        // 成功通知（ephemeralの返信を更新）
+                        // 重要なポイント：
+                        // i.followUp または i.editReply で「合成しました」と出し、
+                        // interaction.editReply で「メインのペット画面」を更新する。
                         await i.editReply({ content: `✅ **${pName}** が進化しました！`, components: [] });
-                        // メインUIを最新状態へ
                         await interaction.editReply(createMainInterface(updated.value));
                     }
                 } catch (err) {
-                    console.error(err);
+                    console.error("Collector Error:", err);
                 }
             });
 
@@ -173,8 +173,7 @@ module.exports = {
             });
 
         } catch (error) {
-            console.error(error);
-            if (interaction.deferred) await interaction.editReply('データの読み込みに失敗しました。');
+            console.error("Main Execution Error:", error);
         }
     }
 };
