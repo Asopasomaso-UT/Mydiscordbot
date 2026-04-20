@@ -28,6 +28,24 @@ async function connectDatabase() {
     }
 }
 
+client.on('interactionCreate', async interaction => {
+    if (interaction.isChatInputCommand()) {
+        const command = client.commands.get(interaction.commandName);
+        if (!command) return;
+        try {
+            await command.execute(interaction);
+        } catch (error) { console.error(error); }
+    } 
+    // ここを追加！
+    else if (interaction.isAutocomplete()) {
+        const command = client.commands.get(interaction.commandName);
+        if (!command) return;
+        try {
+            await command.autocomplete(interaction);
+        } catch (error) { console.error(error); }
+    }
+});
+
 // --- 3. コマンド・イベントの読み込み ---
 const slashcommandsPath = path.join(__dirname, 'commands');
 const slashcommandFiles = fs.readdirSync(slashcommandsPath).filter(file => file.endsWith('.js'));
