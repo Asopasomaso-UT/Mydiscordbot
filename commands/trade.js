@@ -49,7 +49,7 @@ module.exports = {
         if (!initiatorDoc?.value?.pets?.length || !targetDoc?.value?.pets?.length) {
             client.tradeSessions.delete(initiator.id);
             client.tradeSessions.delete(target.id);
-            return interaction.editReply("双方がペットを所持している必要があります。");
+            return interaction.editReply("双方、または片方がペットを所持していないためトレードできません。");
         }
 
         tradeState[initiator.id].data = initiatorDoc.value;
@@ -59,61 +59,64 @@ module.exports = {
         const createTradeEmbed = () => {
             const formatList = (userId) => {
                 const state = tradeState[userId];
-                if (state.pets.length === 0) return '❌ 選択してください';
+                if (state.pets.length === 0) return '❌ 渡すペットを選択してください';
                 return state.pets.map(p => `・${p.name}`).join('\n');
             };
 
             return new EmbedBuilder()
-                .setTitle('🤝 トレードセッション')
+                .setTitle('🤝 ペットトレードセッション')
                 .setColor('Yellow')
                 .setDescription(`${initiator} ⇄ ${target}\n\n**自分の名前がついたメニューとボタンを操作してください。**`)
                 .addFields(
-                    { name: `🟦 ${initiator.username}${tradeState[initiator.id].accepted ? ' ✅確定' : ''}`, value: formatList(initiator.id), inline: true },
-                    { name: `🟩 ${target.username}${tradeState[target.id].accepted ? ' ✅確定' : ''}`, value: formatList(target.id), inline: true }
+                    { name: `🟦 ${initiator.username}${tradeState[initiator.id].accepted ? ' ✅確定済み' : ''}`, value: formatList(initiator.id), inline: true },
+                    { name: `🟩 ${target.username}${tradeState[target.id].accepted ? ' ✅確定済み' : ''}`, value: formatList(target.id), inline: true }
                 )
-                .setFooter({ text: '※ペットを選択し直すと双方の確定が解除されます。' });
+                .setFooter({ text: '※ペットを選択し直すと、双方の確定状態がリセットされます。' });
         };
 
         const createComponents = () => {
-            // Initiator(自分)用メニュー
-            const initiatorSelect = new StringSelectMenuBuilder()
-                .setCustomId(`trade_select_${initiator.id}`)
-                .setPlaceholder(`${initiator.username}のペット選択`)
-                .setMaxValues(Math.min(tradeState[initiator.id].data.pets.length, 5))
-                .addOptions(tradeState[initiator.id].data.pets.slice(-25).map(p => ({ label: p.name, value: p.petId })));
+            const getPetOptions = (userId) => {
+                return tradeState[userId].data.pets.slice(-25).reverse().map(p => ({
+                    label: p.name,
+                    description: `倍率: x${p.multiplier || 1}`,
+                    value: p.petId
+                }));
+            };
 
-            // Target(相手)用メニュー
-            const targetSelect = new StringSelectMenuBuilder()
-                .setCustomId(`trade_select_${target.id}`)
-                .setPlaceholder(`${target.username}のペット選択`)
-                .setMaxValues(Math.min(tradeState[target.id].data.pets.length, 5))
-                .addOptions(tradeState[target.id].data.pets.slice(-25).map(p => ({ label: p.name, value: p.petId })));
-
-            // ボタン
-            const buttons = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId(`trade_confirm_${initiator.id}`)
-                    .setLabel(`${initiator.username} 確定`)
-                    .setStyle(tradeState[initiator.id].accepted ? ButtonStyle.Success : ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId(`trade_confirm_${target.id}`)
-                    .setLabel(`${target.username} 確定`)
-                    .setStyle(tradeState[target.id].accepted ? ButtonStyle.Success : ButtonStyle.Primary),
-                new ButtonBuilder()
-                    .setCustomId('trade_cancel')
-                    .setLabel('トレード中止')
-                    .setStyle(ButtonStyle.Danger)
-            );
-
-            return [
-                new ActionRowBuilder().addComponents(initiatorSelect),
-                new ActionRowBuilder().addComponents(targetSelect),
-                buttons
+            const rows = [
+                new ActionRowBuilder().addComponents(
+                    new StringSelectMenuBuilder()
+                        .setCustomId(`trade_select_${initiator.id}`)
+                        .setPlaceholder(`${initiator.username}のペット選択`)
+                        .setMaxValues(Math.min(tradeState[initiator.id].data.pets.length, 5))
+                        .addOptions(getPetOptions(initiator.id))
+                ),
+                new ActionRowBuilder().addComponents(
+                    new StringSelectMenuBuilder()
+                        .setCustomId(`trade_select_${target.id}`)
+                        .setPlaceholder(`${target.username}のペット選択`)
+                        .setMaxValues(Math.min(tradeState[target.id].data.pets.length, 5))
+                        .addOptions(getPetOptions(target.id))
+                ),
+                new ActionRowBuilder().addComponents(
+                    new ButtonBuilder()
+                        .setCustomId(`trade_confirm_${initiator.id}`)
+                        .setLabel(`${initiator.username} 確定`)
+                        .setStyle(tradeState[initiator.id].accepted ? ButtonStyle.Success : ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId(`trade_confirm_${target.id}`)
+                        .setLabel(`${target.username} 確定`)
+                        .setStyle(tradeState[target.id].accepted ? ButtonStyle.Success : ButtonStyle.Primary),
+                    new ButtonBuilder()
+                        .setCustomId('trade_cancel')
+                        .setLabel('トレード中止')
+                        .setStyle(ButtonStyle.Danger)
+                )
             ];
+            return rows;
         };
 
         const response = await interaction.editReply({
-            content: "トレードを開始しました。",
             embeds: [createTradeEmbed()],
             components: createComponents()
         });
@@ -121,42 +124,38 @@ module.exports = {
         const collector = response.createMessageComponentCollector({ time: 300000 });
 
         collector.on('collect', async (i) => {
-            // 当事者以外を排除
             if (i.user.id !== initiator.id && i.user.id !== target.id) {
-                return i.reply({ content: "あなたはこのトレードに参加していません。", flags: [MessageFlags.Ephemeral] });
+                return i.reply({ content: "このトレードには参加できません。", flags: [MessageFlags.Ephemeral] });
             }
 
-            // --- 修正: deferUpdate() で「インタラクション失敗」を即座に回避 ---
             if (i.customId === 'trade_cancel') {
                 return collector.stop('cancelled');
             }
+
+            // インタラクション失敗を回避
             await i.deferUpdate().catch(() => {});
 
-            // 自分のIDが含まれるコンポーネントのみ操作可能にする
+            // IDチェック
             if (i.customId.includes('_') && !i.customId.endsWith(i.user.id)) {
-                return i.followUp({ content: "自分の名前のついた項目を操作してください。", flags: [MessageFlags.Ephemeral] });
+                return i.followUp({ content: "自分のパネルのみ操作可能です。", flags: [MessageFlags.Ephemeral] });
             }
 
-            // ペット選択処理
+            // ペット選択
             if (i.customId.startsWith('trade_select_')) {
                 tradeState[i.user.id].pets = tradeState[i.user.id].data.pets.filter(p => i.values.includes(p.petId));
-                // すり替え防止: 片方が変更したら全員の確定をリセット
                 tradeState[initiator.id].accepted = false;
                 tradeState[target.id].accepted = false;
-                
                 await interaction.editReply({ embeds: [createTradeEmbed()], components: createComponents() });
             }
 
-            // 確定ボタン処理
+            // 確定ボタン
             if (i.customId.startsWith('trade_confirm_')) {
                 if (tradeState[i.user.id].pets.length === 0) {
-                    return i.followUp({ content: "ペットを1匹以上選択してください。", flags: [MessageFlags.Ephemeral] });
+                    return i.followUp({ content: "交換するペットを1匹以上選んでください。", flags: [MessageFlags.Ephemeral] });
                 }
-                
                 tradeState[i.user.id].accepted = true;
                 await interaction.editReply({ embeds: [createTradeEmbed()], components: createComponents() });
 
-                // 双方が確定したら終了
                 if (tradeState[initiator.id].accepted && tradeState[target.id].accepted) {
                     collector.stop('success');
                 }
@@ -172,23 +171,34 @@ module.exports = {
                     const initiatorSelectedIds = tradeState[initiator.id].pets.map(p => p.petId);
                     const targetSelectedIds = tradeState[target.id].pets.map(p => p.petId);
 
+                    // MongoDBのConflictingUpdateOperatorsを回避するため、新しい配列を計算
+                    const newInitiatorPets = [
+                        ...tradeState[initiator.id].data.pets.filter(p => !initiatorSelectedIds.includes(p.petId)),
+                        ...tradeState[target.id].pets
+                    ];
+
+                    const newTargetPets = [
+                        ...tradeState[target.id].data.pets.filter(p => !targetSelectedIds.includes(p.petId)),
+                        ...tradeState[initiator.id].pets
+                    ];
+
+                    // $set で一括上書き
                     await Promise.all([
-                        DataModel.findOneAndUpdate({ id: initiatorKey }, {
-                            $pull: { 'value.pets': { petId: { $in: initiatorSelectedIds } } },
-                            $push: { 'value.pets': { $each: tradeState[target.id].pets } }
-                        }),
-                        DataModel.findOneAndUpdate({ id: targetKey }, {
-                            $pull: { 'value.pets': { petId: { $in: targetSelectedIds } } },
-                            $push: { 'value.pets': { $each: tradeState[initiator.id].pets } }
-                        })
+                        DataModel.findOneAndUpdate({ id: initiatorKey }, { 'value.pets': newInitiatorPets }),
+                        DataModel.findOneAndUpdate({ id: targetKey }, { 'value.pets': newTargetPets })
                     ]);
-                    await interaction.editReply({ content: `✅ **トレード成立！**\n交換が完了しました。`, embeds: [], components: [] });
+
+                    await interaction.editReply({ content: `✅ **トレード成立！**\nアイテムの交換に成功しました。`, embeds: [], components: [] });
                 } catch (e) {
-                    console.error(e);
-                    await interaction.editReply({ content: "❌ データベースエラーが発生しました。", embeds: [], components: [] });
+                    console.error("TRADE DB ERROR:", e);
+                    await interaction.editReply({ content: "❌ トレード処理中にエラーが発生しました。", embeds: [], components: [] });
                 }
             } else {
-                await interaction.editReply({ content: "🚫 トレードが中止またはタイムアウトしました。", embeds: [], components: [] });
+                await interaction.editReply({ 
+                    content: reason === 'cancelled' ? "🚫 トレードが中止されました。" : "⏰ タイムアウトしました。", 
+                    embeds: [], 
+                    components: [] 
+                });
             }
         });
     }
