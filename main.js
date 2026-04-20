@@ -17,6 +17,9 @@ const client = new Client({
 
 client.commands = new Collection();
 
+// --- 重要: トレード等のセッション管理用Setをここで初期化 ---
+client.tradeSessions = new Set(); 
+
 // --- 2. MongoDB 接続関数 ---
 async function connectDatabase() {
     try {
@@ -28,24 +31,6 @@ async function connectDatabase() {
     }
 }
 
-client.on('interactionCreate', async interaction => {
-    if (interaction.isChatInputCommand()) {
-        const command = client.commands.get(interaction.commandName);
-        if (!command) return;
-        try {
-            await command.execute(interaction);
-        } catch (error) { console.error(error); }
-    } 
-    // ここを追加！
-    else if (interaction.isAutocomplete()) {
-        const command = client.commands.get(interaction.commandName);
-        if (!command) return;
-        try {
-            await command.autocomplete(interaction);
-        } catch (error) { console.error(error); }
-    }
-});
-
 // --- 3. コマンド・イベントの読み込み ---
 const slashcommandsPath = path.join(__dirname, 'commands');
 const slashcommandFiles = fs.readdirSync(slashcommandsPath).filter(file => file.endsWith('.js'));
@@ -53,7 +38,9 @@ const slashcommandFiles = fs.readdirSync(slashcommandsPath).filter(file => file.
 for (const file of slashcommandFiles) {
     const slashfilePath = path.join(slashcommandsPath, file);
     const command = require(slashfilePath);
-    client.commands.set(command.data.name, command);
+    if ('data' in command && 'execute' in command) {
+        client.commands.set(command.data.name, command);
+    }
 }
 
 const eventsPath = path.join(__dirname, 'events');
@@ -69,47 +56,47 @@ for (const file of eventsFiles) {
     }
 }
 
-// --- 4. スラッシュコマンド実行処理 (ここがエラー回避の肝) ---
+// --- 4. インタラクション実行処理 (一本化) ---
 client.on(Events.InteractionCreate, async interaction => {
-    // スラッシュコマンド以外は無視
-    if (!interaction.isChatInputCommand()) return;
+    // スラッシュコマンドの処理
+    if (interaction.isChatInputCommand()) {
+        const command = client.commands.get(interaction.commandName);
+        if (!command) return;
 
-    const command = client.commands.get(interaction.commandName);
-    if (!command) return;
-
-    try {
-        /**
-         * 【重要】
-         * ここで interaction.deferReply() を書いてはいけません。
-         * 各コマンド (ranking.js, janken.js など) の冒頭にある deferReply と
-         * 衝突して 40060 エラーが発生するためです。
-         */
-        await command.execute(interaction);
-        
-    } catch (error) {
-        console.error(`⚠️ コマンド実行エラー [${interaction.commandName}]:`, error);
-
-        // エラー発生時、まだ返信（または保留）をしていなければ返信する
-        const errorMsg = { content: 'コマンドの実行中にエラーが発生しました。', flags: [MessageFlags.Ephemeral] };
-        
         try {
-            if (interaction.deferred || interaction.replied) {
-                await interaction.followUp(errorMsg);
-            } else {
-                await interaction.reply(errorMsg);
-            }
-        } catch (e) {
-            // Discordとの通信が完全に切れている場合は何もしない
+            await command.execute(interaction);
+        } catch (error) {
+            console.error(`⚠️ コマンド実行エラー [${interaction.commandName}]:`, error);
+
+            const errorMsg = { content: 'コマンドの実行中にエラーが発生しました。', flags: [MessageFlags.Ephemeral] };
+            try {
+                if (interaction.deferred || interaction.replied) {
+                    await interaction.followUp(errorMsg);
+                } else {
+                    await interaction.reply(errorMsg);
+                }
+            } catch (e) { /* 通信エラー時は無視 */ }
+        }
+    } 
+    
+    // オートコンプリートの処理
+    else if (interaction.isAutocomplete()) {
+        const command = client.commands.get(interaction.commandName);
+        if (!command || !command.autocomplete) return;
+
+        try {
+            await command.autocomplete(interaction);
+        } catch (error) {
+            console.error(`⚠️ Autocomplete Error [${interaction.commandName}]:`, error);
         }
     }
 });
 
 // --- 5. 起動プロセス ---
 async function init() {
-    // データベースに繋いでからログイン
     await connectDatabase();
     
-    // スラッシュコマンドの登録 (deploy-commands.js)
+    // スラッシュコマンドの登録
     require("./deploy-commands.js");
     
     client.login(process.env.TOKEN);
