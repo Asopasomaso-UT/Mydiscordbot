@@ -2,6 +2,30 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBui
 const mongoose = require('mongoose');
 const DataModel = mongoose.models.QuickData;
 
+// 全ユーザーのデータをチェックし、IDがないペットにIDを付与する関数
+async function migratePetData() {
+    const users = await DataModel.find({ "value.pets": { $exists: true } });
+    
+    for (const user of users) {
+        let modified = false;
+        const updatedPets = user.value.pets.map(pet => {
+            if (!pet.petId) {
+                pet.petId = uuidv4(); // IDがないペットに新しく付与
+                modified = true;
+            }
+            return pet;
+        });
+
+        if (modified) {
+            await DataModel.updateOne(
+                { id: user.id },
+                { $set: { "value.pets": updatedPets } }
+            );
+            console.log(`Updated pet data for user: ${user.id}`);
+        }
+    }
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
