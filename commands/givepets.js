@@ -21,7 +21,7 @@ module.exports = {
                 .setRequired(true)
                 // PET_MASTERから名前を抽出して選択肢にする (最大25個まで)
                 .addChoices(
-                    ...Object.keys(PET_MASTER).slice(0, 25).map(name => ({ name: name, value: name }))
+                    ...Object.keys(PET_MASTER).slice(0, 100).map(name => ({ name: name, value: name }))
                 )
         )
         .addIntegerOption(option =>
