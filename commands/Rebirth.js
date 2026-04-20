@@ -146,7 +146,7 @@ module.exports = {
                 ]);
 
                 await i.update({ 
-                    content: `✅ **リバース成功！** (${rebirths + 1}回目)\n所持金と引き換えに、SRへの階段を一歩昇りました。`, 
+                    content: `✅ **リバース成功！** (${rebirths + 1}回目)\n所持金と引き換えに、SuperRebirthへの階段を一歩昇りました。`, 
                     embeds: [], 
                     components: [] 
                 });
