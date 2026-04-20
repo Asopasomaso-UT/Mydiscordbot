@@ -1,27 +1,51 @@
-require('dotenv').config()
-
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const fs = require("fs");
 const app = express();
 
+// 静的ファイルの提供
 app.use(express.static(path.join(__dirname, 'pages')));
 
+// ルートパスへのアクセス
 app.get("/", (req, res) => {
-  fs.readFile("./pages/index.html", (err, data) => {
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.write(data);
-    res.end();
-  });
-})
+    const indexPath = path.join(__dirname, 'pages', 'index.html');
+    
+    // ファイルの存在確認をしてから読み込む（エラー落ち防止）
+    if (fs.existsSync(indexPath)) {
+        fs.readFile(indexPath, (err, data) => {
+            if (err) {
+                res.status(500).send("Internal Server Error");
+                return;
+            }
+            res.writeHead(200, { "Content-Type": "text/html" });
+            res.write(data);
+            res.end();
+        });
+    } else {
+        res.status(404).send("index.htmlが見つかりません。pagesフォルダを確認してください。");
+    }
+});
 
-// サーバーを起動
-app.listen(3000, () => {
-    console.log(`サーバーを開きました`);
-  });
-  
-  if (process.env.TOKEN == undefined || process.env.TOKEN == "") {
-    console.log("TOKENを設定してください");
-  }
+// ポート番号は環境変数（PORT）を優先（ホスティングサービス対策）
+const PORT = process.env.PORT || 3000;
 
-  require('./main.js')
+app.listen(PORT, () => {
+    console.log(`-----------------------------------------`);
+    console.log(`🌐 Webサーバーがポート ${PORT} で起動しました`);
+    console.log(`-----------------------------------------`);
+});
+
+// トークンチェック
+if (!process.env.TOKEN) {
+    console.error("❌ ERROR: TOKENが設定されていません。.envファイルを確認してください。");
+    process.exit(1); // トークンがない場合は起動させない
+}
+
+// ボットのメイン処理を読み込み
+try {
+    require('./main.js');
+    console.log("🤖 Discordボットのメインプロセスを読み込みました");
+} catch (error) {
+    console.error("❌ main.jsの読み込み中にエラーが発生しました:", error);
+}
