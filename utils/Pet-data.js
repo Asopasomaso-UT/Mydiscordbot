@@ -46,6 +46,7 @@ const PET_MASTER = {
     'シーモンキー': { rarity: 'Artifact', multiplier: 10.00 },
     //Secret
     '首無し騎士': { rarity: 'Secret', multiplier: 75.00 },
+    'Skibidi toilet': { rarity: 'Secret', multiplier: 80.00 },
     'スマーフキャット': { rarity: 'Secret', multiplier: 105.00 },
     'アソパソマソ': { rarity: 'Secret', multiplier: 130.00 },
     'Keyboard Crusher': { rarity: 'Secret', multiplier: 135.00 },
