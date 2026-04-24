@@ -28,6 +28,7 @@ module.exports = {
             const input = message.content.trim();
             const now = Date.now();
 
+            // 1. 時間切れ判定
             const timeLimits = { easy: 60, normal: 30, hard: 10 };
             const limitSeconds = timeLimits[difficulty] || 60;
             if ((now - lastTimestamp) / 1000 > limitSeconds) {
@@ -35,8 +36,8 @@ module.exports = {
                 return message.reply(`⏰ **時間切れ！**\n**最終獲得:** ${(totalGained || 0).toLocaleString()} 💰`);
             }
 
+            // 2. 入力バリデーション
             if (!/^[ぁ-んァ-ヶー]+$/.test(input) || input.length < 2) return;
-
             const lastChar = lastWord.slice(-1) === 'ー' ? lastWord.slice(-2, -1) : lastWord.slice(-1);
             if (input[0].localeCompare(lastChar, 'ja', { sensitivity: 'accent' }) !== 0) return;
             if (usedWords.includes(input)) return message.reply(`⚠️ **「${input}」** は既に出ています！`);
@@ -46,12 +47,31 @@ module.exports = {
                 return message.reply(`💀 **「${input}」** ……「ん」がつきました！負けです！\n**最終獲得:** ${(totalGained || 0).toLocaleString()} 💰`);
             }
 
+            // --- AIの処理開始 ---
+            // ユーザーに「考えている」ことを伝える（リアクション）
+            await message.react('🤔').catch(() => {});
+
             const nextChar = input.slice(-1) === 'ー' ? input.slice(-2, -1) : input.slice(-1);
             const prompt = `日本語しりとり判定：1. 「${input}」は実在する名詞か？ (YES/NO) 2. 「${nextChar}」から始まる名詞を1つ。回答形式：判定:YES, 単語:○○`;
 
-            const result = await model.generateContent(prompt);
-            const response = await result.response;
-            const responseText = response.text().trim();
+            let responseText = "";
+            try {
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                responseText = response.text().trim();
+            } catch (apiError) {
+                // リアクションを解除（可能であれば）
+                message.reactions.removeAll().catch(() => {});
+
+                // --- 【追加】API回数制限(429)のハンドリング ---
+                if (apiError.status === 429) {
+                    return message.reply("⚠️ **AIの回数制限です！**\n現在、無料枠の限界に達しました。1分ほど待ってからもう一度入力してください。");
+                }
+                throw apiError; // その他のエラーは外側のcatchへ
+            }
+
+            // リアクションを外す
+            message.reactions.removeAll().catch(() => {});
 
             const isExist = responseText.includes("判定:YES");
             const aiWordMatch = responseText.match(/単語:([ぁ-んァ-ヶー]+)/);
@@ -64,7 +84,7 @@ module.exports = {
                 return message.reply(`🏳️ **AIの降参！** 私の負けです！\n**最終獲得:** ${(totalGained || 0).toLocaleString()} 💰`);
             }
 
-            // --- 【修正済み】ペット倍率の計算 ---
+            // --- ペット倍率の計算 ---
             const petData = await DataModel.findOne({ id: petKey });
             let totalMultiplier = 0;
             const pets = petData?.value?.pets || [];
@@ -88,7 +108,6 @@ module.exports = {
             let baseReward = difficulty === 'hard' ? 100 : difficulty === 'normal' ? 30 : 10;
             const comboBonus = (1 + Math.floor(count / 10) * 0.5);
             
-            // 最終報酬計算
             const finalReward = Math.floor(baseReward * comboBonus * totalMultiplier);
             const newTotalGained = (totalGained || 0) + finalReward;
 
@@ -121,6 +140,10 @@ module.exports = {
 
         } catch (error) {
             console.error('AI Shiritori Error:', error);
+            // 予期せぬエラー時に「ん」で終わった扱いにせず、ユーザーに通知する
+            if (!message.replied) {
+                message.reply("🛠️ システムエラーが発生しました。時間を置いて試してください。").catch(() => {});
+            }
         }
     }
 };
