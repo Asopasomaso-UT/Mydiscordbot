@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const DataModel = mongoose.models.QuickData;
 
-// 設定データの読み込み（パスは環境に合わせて調整してください）
+// 設定データの読み込み
 const { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES } = require('../utils/Pet-data');
 
 module.exports = {
@@ -12,7 +12,6 @@ module.exports = {
         .setDescription('ペットの管理・進化・売却を行います'),
 
     async execute(interaction) {
-        // --- 1. 応答の遅延 (3秒ルール対策) ---
         try {
             await interaction.deferReply();
         } catch (err) {
@@ -30,8 +29,6 @@ module.exports = {
             const rarity = (petInfo?.rarity || 'Common').toLowerCase();
             const eggKey = Object.keys(EGG_CONFIG).find(k => k.toLowerCase().includes(rarity)) || 'common_egg';
             const basePrice = EGG_CONFIG[eggKey]?.price || 1000;
-            
-            // 進化段階倍率: 通常1倍, Golden5倍, Shiny25倍, Neon125倍
             const evoBonus = [1, 5, 25, 125][pet.evoLevel || 0];
             return Math.floor(basePrice * 0.1 * evoBonus);
         };
@@ -95,16 +92,24 @@ module.exports = {
             return { embeds: [embed], components: rows };
         };
 
+        // --- 排他制御用：メイン画面を一時無効化する関数 ---
+        const setMainWaiting = async () => {
+            const waitingEmbed = new EmbedBuilder()
+                .setTitle("⏳ 処理中...")
+                .setColor("Orange")
+                .setDescription("別のメニューを表示しています。操作が終わるまでお待ちください...");
+            await interaction.editReply({ embeds: [waitingEmbed], components: [] });
+        };
+
         // --- コレクター処理 ---
         try {
             const initialDoc = await DataModel.findOne({ id: petKey });
             if (!initialDoc || !initialDoc.value?.pets?.length) return await interaction.editReply('ペットを所持していません。');
 
-            const response = await interaction.editReply(createMainInterface(initialDoc.value));
+            let response = await interaction.editReply(createMainInterface(initialDoc.value));
             const collector = response.createMessageComponentCollector({ filter: i => i.user.id === interaction.user.id, time: 600000 });
 
             collector.on('collect', async (i) => {
-                // すべての操作に対して最初に deferUpdate を行う（失敗回避の要）
                 try { await i.deferUpdate(); } catch (e) { return; }
 
                 const latestDoc = await DataModel.findOne({ id: petKey });
@@ -125,6 +130,8 @@ module.exports = {
                     const groups = getFusionableGroups(currentData.pets);
                     if (!groups.length) return i.followUp({ content: '進化可能な4体セットがいません。', flags: [MessageFlags.Ephemeral] });
 
+                    await setMainWaiting(); // メイン画面を一時消去
+
                     const menu = new StringSelectMenuBuilder().setCustomId('exec_fusion').setPlaceholder('進化させるペットを選択');
                     groups.forEach(g => menu.addOptions({ label: `${g.evoName}${g.name}`, description: `4体を消費して ${g.nextEvoName} へ`, value: `${g.name}:${g.evoLevel}` }));
                     await i.followUp({ content: '🧪 **進化合成**', components: [new ActionRowBuilder().addComponents(menu)], flags: [MessageFlags.Ephemeral] });
@@ -134,6 +141,8 @@ module.exports = {
                 if (i.customId === 'open_sell_menu') {
                     const sellable = currentData.pets.filter(p => !currentData.equippedPetIds.includes(p.petId)).slice(0, 25);
                     if (!sellable.length) return i.followUp({ content: '売却可能なペット（装備中以外）がいません。', flags: [MessageFlags.Ephemeral] });
+
+                    await setMainWaiting(); // メイン画面を一時消去
 
                     const menu = new StringSelectMenuBuilder().setCustomId('exec_sell').setPlaceholder('売却するペットを選択（複数可）').setMinValues(1).setMaxValues(sellable.length);
                     sellable.forEach(p => menu.addOptions({ label: `${p.name}`, description: `売却価格: ${calculateSellPrice(p).toLocaleString()} 💰`, value: p.petId }));
@@ -164,7 +173,11 @@ module.exports = {
                     const [pName, pEvo] = i.values[0].split(':');
                     const evo = parseInt(pEvo);
                     const targets = currentData.pets.filter(p => p.name === pName && (p.evoLevel || 0) === evo).slice(0, 4);
-                    if (targets.length < 4) return;
+                    if (targets.length < 4) {
+                        await i.editReply({ content: "❌ ペットが足りなくなりました。再試行してください。", components: [] });
+                        const res = await DataModel.findOne({ id: petKey });
+                        return await interaction.editReply(createMainInterface(res.value));
+                    }
 
                     const targetIds = targets.map(t => t.petId);
                     const remaining = currentData.pets.filter(p => !targetIds.includes(p.petId));
@@ -173,10 +186,8 @@ module.exports = {
 
                     const updated = await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining, 'value.equippedPetIds': newEquip } }, { returnDocument: 'after' });
                     
-                    // 子メニュー（Ephemeral）を更新して閉じる
                     await i.editReply({ content: '✅ 進化が完了しました！', components: [] });
-                    // メイン画面を更新
-                    await interaction.editReply(createMainInterface(updated.value));
+                    await interaction.editReply(createMainInterface(updated.value)); // メイン画面復活
                 }
 
                 // 実行：個別売却
@@ -189,11 +200,9 @@ module.exports = {
                     await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining } });
                     await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: totalGain } });
 
-                    // 子メニュー（Ephemeral）を更新して閉じる
                     await i.editReply({ content: `✅ ${targets.length}匹を売却しました (+${totalGain.toLocaleString()} 💰)`, components: [] });
-                    // メイン画面を更新
                     const res = await DataModel.findOne({ id: petKey });
-                    await interaction.editReply(createMainInterface(res.value));
+                    await interaction.editReply(createMainInterface(res.value)); // メイン画面復活
                 }
             });
 
