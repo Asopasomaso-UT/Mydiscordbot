@@ -88,7 +88,7 @@ const EGG_CONFIG = {
     'Undertale_egg': {
         name: 'Undertale Egg', price: 500000,
         // 複数レアリティが混ざる場合の例
-        rates: {'Epic': 40, 'Legendary': 30, 'Mythic': 10, 'Unique':15, 'Artifact':4.85, 'secret':0.15 },
+        rates: {'Epic': 40, 'Legendary': 30, 'Mythic': 15, 'Unique':10, 'Artifact':4.85, 'secret':0.15 },
         contents: ['Flowey', 'Toriel', 'Undyne', 'Asgore', 'Sans', 'Undyne the Undying']
     },
     'Exotic_egg': {
