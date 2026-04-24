@@ -8,7 +8,7 @@ const { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES } = require('../utils/Pet-data'
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペット管理（Mimicの計算漏れを修正）'),
+        .setDescription('ペット管理（倍率計算の型一致とMimicを完全に修正）'),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -18,15 +18,6 @@ module.exports = {
         const petKey = `pet_data_${guildId}_${userId}`;
         const moneyKey = `money_${guildId}_${userId}`;
 
-        const calculateSellPrice = (pet) => {
-            const petInfo = PET_MASTER[pet.name];
-            const rarity = (petInfo?.rarity || 'Common').toLowerCase();
-            const eggKey = Object.keys(EGG_CONFIG).find(k => k.toLowerCase().includes(rarity)) || 'common_egg';
-            const basePrice = EGG_CONFIG[eggKey]?.price || 1000;
-            const evoBonus = [1, 5, 25, 125][pet.evoLevel || 0];
-            return Math.floor(basePrice * 0.1 * evoBonus);
-        };
-
         const getPetDisplayName = (p) => {
             const evoPrefix = EVOLUTION_STAGES[p.evoLevel || 0].name ? `[${EVOLUTION_STAGES[p.evoLevel || 0].name}] ` : "";
             const enchantInfo = p.enchant ? ` ${p.enchant.type} Lv.${p.enchant.level}` : "";
@@ -35,29 +26,35 @@ module.exports = {
 
         const createMainInterface = (currentData) => {
             const pets = currentData.pets || [];
-            const equippedIds = currentData.equippedPetIds || [];
+            // IDの型（String）を確実にする
+            const equippedIds = (currentData.equippedPetIds || []).map(id => String(id));
             const srCount = currentData.superRebirthCount || 0;
             const maxEquipSlot = 3 + srCount;
-            const equippedPets = pets.filter(p => equippedIds.includes(p.petId));
+
+            // 装備中のペットを確実に抽出
+            const equippedPets = pets.filter(p => equippedIds.includes(String(p.petId)));
             
-            // --- 合計倍率計算 (修正済み) ---
             let totalMult = 0;
             equippedPets.forEach(p => {
-                const basePart = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
+                // 基本倍率 × 進化倍率
+                const basePart = Number(p.multiplier || 1) * Number(EVOLUTION_STAGES[p.evoLevel || 0].multiplier);
                 
+                // エンチャント倍率 (加算ベース)
                 let enchantFactor = 1.0;
                 if (p.enchant) {
-                    // ここに mimic の判定をしっかり追加！
+                    const lv = Number(p.enchant.level || 0);
                     if (p.enchant.type === 'power') {
-                        enchantFactor += (p.enchant.level * 0.2);
+                        enchantFactor += (lv * 0.2); // +20% / Lv
                     } else if (p.enchant.type === 'mimic') {
-                        enchantFactor += p.enchant.level; // 1Lvごとに+1.0 (100%)
+                        enchantFactor += lv;       // +100% / Lv
                     }
                 }
                 
+                // 最終加算
                 totalMult += (basePart * enchantFactor);
             });
 
+            // 1体も装備していない場合は 1.00 にする
             const displayTotal = totalMult <= 0 ? "1.00" : totalMult.toFixed(2);
 
             const embed = new EmbedBuilder()
@@ -69,14 +66,12 @@ module.exports = {
                     value: equippedPets.length > 0 
                         ? equippedPets.map(p => {
                             const pBase = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
-                            // 表示用の個別倍率計算にも mimic を反映
-                            let pBonus = 1.0;
+                            let pFactor = 1.0;
                             if (p.enchant) {
-                                if (p.enchant.type === 'power') pBonus += p.enchant.level * 0.2;
-                                else if (p.enchant.type === 'mimic') pBonus += p.enchant.level;
+                                if (p.enchant.type === 'power') pFactor += p.enchant.level * 0.2;
+                                else if (p.enchant.type === 'mimic') pFactor += p.enchant.level;
                             }
-                            const pFinal = (pBase * pBonus).toFixed(2);
-                            return `✅ **${getPetDisplayName(p)}** (x${pFinal})`;
+                            return `✅ **${getPetDisplayName(p)}** (x${(pBase * pFactor).toFixed(2)})`;
                         }).join('\n') 
                         : 'なし'
                 });
@@ -92,9 +87,9 @@ module.exports = {
                         .setMaxValues(Math.min(displayPets.length, maxEquipSlot))
                         .addOptions(displayPets.map(p => ({
                             label: getPetDisplayName(p),
-                            description: `基本倍率: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
-                            value: p.petId,
-                            default: equippedIds.includes(p.petId)
+                            description: `基本: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
+                            value: String(p.petId),
+                            default: equippedIds.includes(String(p.petId))
                         })))
                 ));
             }
@@ -106,10 +101,10 @@ module.exports = {
             return { embeds: [embed], components: rows };
         };
 
-        // --- 進化・売却画面生成 (修正なし) ---
+        // --- 以下、補助UI (Fusion/Sell) とコレクター ---
         const createFusionInterface = (pets) => {
             const groups = getFusionableGroups(pets);
-            const embed = new EmbedBuilder().setTitle('🧪 ペット進化合成').setColor('Purple').setDescription('同じペット4体を消費して進化させます。');
+            const embed = new EmbedBuilder().setTitle('🧪 ペット進化合成').setColor('Purple');
             const rows = [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('goto_main').setLabel('戻る').setStyle(ButtonStyle.Secondary))];
             if (groups.length > 0) {
                 rows.unshift(new ActionRowBuilder().addComponents(
@@ -121,19 +116,19 @@ module.exports = {
         };
 
         const createSellInterface = (pets, equippedIds) => {
-            const sellable = pets.filter(p => !equippedIds.includes(p.petId)).slice(0, 25);
-            const embed = new EmbedBuilder().setTitle('💰 ペット個別売却').setColor('Red').setDescription('売却するペットを選択してください。');
+            const eIds = (equippedIds || []).map(id => String(id));
+            const sellable = pets.filter(p => !eIds.includes(String(p.petId))).slice(0, 25);
+            const embed = new EmbedBuilder().setTitle('💰 ペット個別売却').setColor('Red');
             const rows = [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('goto_main').setLabel('戻る').setStyle(ButtonStyle.Secondary))];
             if (sellable.length > 0) {
                 rows.unshift(new ActionRowBuilder().addComponents(
                     new StringSelectMenuBuilder().setCustomId('exec_sell').setPlaceholder('売却するペットを選択').setMinValues(1).setMaxValues(sellable.length)
-                        .addOptions(sellable.map(p => ({ label: getPetDisplayName(p), description: `売却価格: ${calculateSellPrice(p).toLocaleString()} 💰`, value: p.petId })))
+                        .addOptions(sellable.map(p => ({ label: getPetDisplayName(p), value: String(p.petId) })))
                 ));
             }
             return { embeds: [embed], components: rows };
         };
 
-        // --- 実行ロジック ---
         const initialDoc = await DataModel.findOne({ id: petKey });
         if (!initialDoc || !initialDoc.value?.pets?.length) return await interaction.editReply('ペットを所持していません。');
 
@@ -157,55 +152,4 @@ module.exports = {
             if (i.customId === 'exec_fusion') {
                 const [pName, pEvo] = i.values[0].split(':');
                 const evo = parseInt(pEvo);
-                const targets = data.pets.filter(p => p.name === pName && (p.evoLevel || 0) === evo).slice(0, 4);
-                if (targets.length < 4) return;
-                const targetIds = targets.map(t => t.petId);
-                const remaining = data.pets.filter(p => !targetIds.includes(p.petId));
-                remaining.push({ ...targets[0], petId: uuidv4(), evoLevel: evo + 1, obtainedAt: Date.now() });
-                const newEquip = (data.equippedPetIds || []).filter(id => !targetIds.includes(id));
-                const updated = await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining, 'value.equippedPetIds': newEquip } }, { returnDocument: 'after' });
-                await interaction.editReply(createFusionInterface(updated.value.pets));
-            }
-
-            if (i.customId === 'exec_sell') {
-                const targets = data.pets.filter(p => i.values.includes(p.petId));
-                const totalGain = targets.reduce((sum, p) => sum + calculateSellPrice(p), 0);
-                const remaining = data.pets.filter(p => !i.values.includes(p.petId));
-                await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining } });
-                await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: totalGain } });
-                const res = await DataModel.findOne({ id: petKey });
-                await interaction.editReply(createSellInterface(res.value.pets, res.value.equippedPetIds));
-            }
-
-            if (i.customId === 'bulk_sell_low') {
-                const targets = data.pets.filter(p => {
-                    const r = (PET_MASTER[p.name]?.rarity || '').toLowerCase();
-                    return (r === 'common' || r === 'uncommon') && !data.equippedPetIds.includes(p.petId);
-                });
-                if (!targets.length) return;
-                const totalGain = targets.reduce((sum, p) => sum + calculateSellPrice(p), 0);
-                const remaining = data.pets.filter(p => !targets.some(t => t.petId === p.petId));
-                await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining } });
-                await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: totalGain } });
-                const res = await DataModel.findOne({ id: petKey });
-                await interaction.editReply(createMainInterface(res.value));
-            }
-        });
-    }
-};
-
-function getFusionableGroups(pets) {
-    const counts = {};
-    pets.forEach(p => {
-        const evo = p.evoLevel || 0;
-        if (evo >= 3) return;
-        const key = `${p.name}:${evo}`;
-        if (!counts[key]) counts[key] = { name: p.name, evoLevel: evo, count: 0 };
-        counts[key].count++;
-    });
-    return Object.values(counts).filter(g => g.count >= 4).map(g => ({
-        name: g.name, evoLevel: g.evoLevel,
-        evoName: EVOLUTION_STAGES[g.evoLevel].name ? `[${EVOLUTION_STAGES[g.evoLevel].name}] ` : "",
-        nextEvoName: EVOLUTION_STAGES[g.evoLevel + 1].name
-    }));
-}
+                const targets = data.pets.filter(p => p.name === pName &&
