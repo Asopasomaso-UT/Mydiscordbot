@@ -9,7 +9,7 @@ const { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES } = require('../utils/Pet-data'
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペットの管理（表示形式を [段階] 名前 エンチャント Lv で表示）'),
+        .setDescription('ペット管理（Mimic倍率計算を修正）'),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -29,8 +29,7 @@ module.exports = {
             return Math.floor(basePrice * 0.1 * evoBonus);
         };
 
-        // --- 共通：ペットの表示名作成ロジック ---
-        // 例: [Neon] おにっぴ power Lv.5
+        // --- 共通：表示名作成 ---
         const getPetDisplayName = (p) => {
             const evoPrefix = EVOLUTION_STAGES[p.evoLevel || 0].name ? `[${EVOLUTION_STAGES[p.evoLevel || 0].name}] ` : "";
             const enchantInfo = p.enchant ? ` ${p.enchant.type} Lv.${p.enchant.level}` : "";
@@ -47,16 +46,27 @@ module.exports = {
             
             let totalMult = 0;
             equippedPets.forEach(p => {
+                // 1. 基本倍率 × 進化倍率
                 let m = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
-                if (p.enchant?.type === 'power') m *= (1 + p.enchant.level * 0.2);
-                if (p.enchant?.type === 'mimic') m *= (1 + p.enchant.level* 1.5);
+                
+                // 2. エンチャント計算（ここを修正！）
+                if (p.enchant) {
+                    if (p.enchant.type === 'power') {
+                        m *= (1 + p.enchant.level * 0.2); // +20% / Lv
+                    } else if (p.enchant.type === 'mimic') {
+                        m *= (1 + p.enchant.level); // +100% / Lv (Lv.1で2倍、Lv.2で3倍...)
+                    }
+                }
                 totalMult += m;
             });
+
+            // チームに何もいない場合は 1.0 倍とする
+            const displayTotal = totalMult === 0 ? "1.00" : totalMult.toFixed(2);
 
             const embed = new EmbedBuilder()
                 .setTitle(`🐾 ペットチーム管理`)
                 .setColor('Blue')
-                .setDescription(`最大枠: **${maxEquipSlot}** | 倍率: **x${(totalMult || 1.0).toFixed(2)}** | 所持: **${pets.length}**匹`)
+                .setDescription(`最大枠: **${maxEquipSlot}** | チーム倍率: **x${displayTotal}** | 所持: **${pets.length}**匹`)
                 .addFields({ 
                     name: `⚔️ 装備中 (${equippedPets.length}/${maxEquipSlot})`, 
                     value: equippedPets.length > 0 
@@ -75,7 +85,7 @@ module.exports = {
                         .setMaxValues(Math.min(displayPets.length, maxEquipSlot))
                         .addOptions(displayPets.map(p => ({
                             label: getPetDisplayName(p),
-                            description: `倍率: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
+                            description: `単品倍率: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
                             value: p.petId,
                             default: equippedIds.includes(p.petId)
                         })))
@@ -159,7 +169,6 @@ module.exports = {
                 if (targets.length < 4) return;
                 const targetIds = targets.map(t => t.petId);
                 const remaining = data.pets.filter(p => !targetIds.includes(p.petId));
-                // 最初の一匹のデータをベースに進化（エンチャントを引き継ぐ）
                 remaining.push({ ...targets[0], petId: uuidv4(), evoLevel: evo + 1, obtainedAt: Date.now() });
                 const newEquip = (data.equippedPetIds || []).filter(id => !targetIds.includes(id));
                 const updated = await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining, 'value.equippedPetIds': newEquip } }, { returnDocument: 'after' });
