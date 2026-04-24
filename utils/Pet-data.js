@@ -114,7 +114,7 @@ const EGG_CONFIG = {
         ]
     },
     'slime_egg': {
-        name: 'Slime egg',
+        name: 'slime egg',
         price: 150000,
         contents: [
             { name: 'スライム', weight: 5 },
