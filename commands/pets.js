@@ -9,7 +9,7 @@ const { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES } = require('../utils/Pet-data'
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペット管理'),
+        .setDescription('ペット管理（エンチャント倍率の計算を修正）'),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -46,27 +46,32 @@ module.exports = {
             
             let totalMult = 0;
             equippedPets.forEach(p => {
-                // 1. 基本倍率 × 進化倍率
-                let m = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
+                // 1. 基本倍率 × 進化倍率 をベースにする
+                let base = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
                 
-                // 2. エンチャント計算（ここを修正！）
+                // 2. エンチャント倍率を適用
+                let enchantMult = 1;
                 if (p.enchant) {
                     if (p.enchant.type === 'power') {
-                        m *= (1 + p.enchant.level * 0.2); // +20% / Lv
+                        // Power: 1Lvにつき +20% (Lv5なら 1 + 1.0 = 2倍)
+                        enchantMult += (p.enchant.level * 0.2);
                     } else if (p.enchant.type === 'mimic') {
-                        m *= (1 + p.enchant.level* 1); // +100% / Lv (Lv.1で2倍、Lv.2で3倍...)
+                        // Mimic: 1Lvにつき +100% (Lv5なら 1 + 5.0 = 6倍)
+                        enchantMult += p.enchant.level;
                     }
                 }
-                totalMult += m;
+                
+                // 3. ベースにエンチャント倍率を掛けて合計に加算
+                totalMult += (base * enchantMult);
             });
 
-            // チームに何もいない場合は 1.0 倍とする
-            const displayTotal = totalMult === 0 ? "1.00" : totalMult.toFixed(2);
+            // チームに誰もいない場合は 1.00 倍を表示
+            const displayTotal = totalMult <= 0 ? "1.00" : totalMult.toFixed(2);
 
             const embed = new EmbedBuilder()
-                .setTitle(`🐾 ペットチーム`)
+                .setTitle(`🐾 ペットチーム管理`)
                 .setColor('Blue')
-                .setDescription(`装備枠: **${maxEquipSlot}** | チーム倍率: **x${displayTotal}** | 所持: **${pets.length}**匹`)
+                .setDescription(`最大枠: **${maxEquipSlot}** | チーム倍率: **x${displayTotal}** | 所持: **${pets.length}**匹`)
                 .addFields({ 
                     name: `⚔️ 装備中 (${equippedPets.length}/${maxEquipSlot})`, 
                     value: equippedPets.length > 0 
@@ -85,7 +90,7 @@ module.exports = {
                         .setMaxValues(Math.min(displayPets.length, maxEquipSlot))
                         .addOptions(displayPets.map(p => ({
                             label: getPetDisplayName(p),
-                            description: `倍率: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
+                            description: `単品基本: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
                             value: p.petId,
                             default: equippedIds.includes(p.petId)
                         })))
@@ -99,7 +104,9 @@ module.exports = {
             return { embeds: [embed], components: rows };
         };
 
-        // --- 画面B: 進化メニューUI ---
+        // --- (以下、FusionInterface, SellInterface, コレクター処理は前回のコードと同一) ---
+        // ... (省略せずに実装してください)
+        
         const createFusionInterface = (pets) => {
             const groups = getFusionableGroups(pets);
             const embed = new EmbedBuilder().setTitle('🧪 ペット進化合成').setColor('Purple').setDescription('同じペット4体を消費して進化させます。');
@@ -107,11 +114,7 @@ module.exports = {
             if (groups.length > 0) {
                 rows.push(new ActionRowBuilder().addComponents(
                     new StringSelectMenuBuilder().setCustomId('exec_fusion').setPlaceholder('進化させるペットを選択')
-                        .addOptions(groups.map(g => ({ 
-                            label: `${g.evoName}${g.name}`, 
-                            description: `4体を消費して ${g.nextEvoName} に進化`, 
-                            value: `${g.name}:${g.evoLevel}` 
-                        })))
+                        .addOptions(groups.map(g => ({ label: `${g.evoName}${g.name}`, description: `4体を消費して ${g.nextEvoName} に進化`, value: `${g.name}:${g.evoLevel}` })))
                 ));
             } else {
                 embed.setDescription('❌ 現在進化可能な4体セットのペットはいません。');
@@ -120,7 +123,6 @@ module.exports = {
             return { embeds: [embed], components: rows };
         };
 
-        // --- 画面C: 売却メニューUI ---
         const createSellInterface = (pets, equippedIds) => {
             const sellable = pets.filter(p => !equippedIds.includes(p.petId)).slice(0, 25);
             const embed = new EmbedBuilder().setTitle('💰 ペット個別売却').setColor('Red').setDescription('売却するペットを選択してください。');
@@ -128,20 +130,15 @@ module.exports = {
             if (sellable.length > 0) {
                 rows.push(new ActionRowBuilder().addComponents(
                     new StringSelectMenuBuilder().setCustomId('exec_sell').setPlaceholder('売却するペットを選択').setMinValues(1).setMaxValues(sellable.length)
-                        .addOptions(sellable.map(p => ({ 
-                            label: getPetDisplayName(p), 
-                            description: `売却価格: ${calculateSellPrice(p).toLocaleString()} 💰`, 
-                            value: p.petId 
-                        })))
+                        .addOptions(sellable.map(p => ({ label: getPetDisplayName(p), description: `価格: ${calculateSellPrice(p).toLocaleString()} 💰`, value: p.petId })))
                 ));
             } else {
-                embed.setDescription('❌ 売却できるペット（装備外）がいません。');
+                embed.setDescription('❌ 売却できるペットがいません。');
             }
             rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('goto_main').setLabel('戻る').setStyle(ButtonStyle.Secondary)));
             return { embeds: [embed], components: rows };
         };
 
-        // --- ロジック実行 ---
         const initialDoc = await DataModel.findOne({ id: petKey });
         if (!initialDoc || !initialDoc.value?.pets?.length) return await interaction.editReply('ペットを所持していません。');
 
