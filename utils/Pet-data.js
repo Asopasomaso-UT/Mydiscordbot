@@ -180,7 +180,7 @@ const ENCHANT_TYPES = {
     'secret_agent': { name: 'Secret Agent', desc: 'シークレット確率アップ' },
     'energy': { name: 'Energy', desc: '獲得経験値(XP)ブースト' },
     'special_hatch': { name: 'Special Hatch', desc: '孵化時にクラフト済みが出る可能性' },
-    'mimic': { name: 'Mimic', desc: 'ペット倍率が超大幅アップ' }
+    'mimic': { name: 'mimic', desc: 'ペット倍率が超大幅アップ' }
 };
 
 // 強化設定
