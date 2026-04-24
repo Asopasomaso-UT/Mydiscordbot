@@ -49,7 +49,7 @@ module.exports = {
             equippedPets.forEach(p => {
                 let m = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
                 if (p.enchant?.type === 'power') m *= (1 + p.enchant.level * 0.2);
-                if (p.enchant?.type === 'mimic') m *= (1 + p.enchant.level);
+                if (p.enchant?.type === 'mimic') m *= (1 + p.enchant.level* 1.5);
                 totalMult += m;
             });
 
