@@ -8,7 +8,7 @@ const { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES } = require('../utils/Pet-data'
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペット管理（Mimic倍率を強制適用）'),
+        .setDescription('ペット管理'),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -65,7 +65,7 @@ module.exports = {
             const embed = new EmbedBuilder()
                 .setTitle(`🐾 ペットチーム管理`)
                 .setColor('Blue')
-                .setDescription(`最大枠: **${maxEquipSlot}** | チーム合計倍率: **x${displayTotal}**\n所持数: **${pets.length}** 匹`)
+                .setDescription(`最大枠: **${maxEquipSlot}** | チーム倍率: **x${displayTotal}**\n所持数: **${pets.length}** 匹`)
                 .addFields({ 
                     name: `⚔️ 装備中 (${equippedPets.length}/${maxEquipSlot})`, 
                     value: equippedListStrings.length > 0 ? equippedListStrings.join('\n') : 'なし'
