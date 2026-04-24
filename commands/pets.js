@@ -152,4 +152,38 @@ module.exports = {
             if (i.customId === 'exec_fusion') {
                 const [pName, pEvo] = i.values[0].split(':');
                 const evo = parseInt(pEvo);
-                const targets = data.pets.filter(p => p.name === pName &&
+                const targets = data.pets.filter(p => p.name === pName && (p.evoLevel || 0) === evo).slice(0, 4);
+                if (targets.length < 4) return;
+                const targetIds = targets.map(t => String(t.petId));
+                const remaining = data.pets.filter(p => !targetIds.includes(String(p.petId)));
+                remaining.push({ ...targets[0], petId: uuidv4(), evoLevel: evo + 1, obtainedAt: Date.now() });
+                const newEquip = (data.equippedPetIds || []).filter(id => !targetIds.includes(String(id)));
+                const updated = await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining, 'value.equippedPetIds': newEquip } }, { returnDocument: 'after' });
+                await interaction.editReply(createFusionInterface(updated.value.pets));
+            }
+
+            if (i.customId === 'exec_sell') {
+                const remaining = data.pets.filter(p => !i.values.includes(String(p.petId)));
+                await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining } });
+                const res = await DataModel.findOne({ id: petKey });
+                await interaction.editReply(createSellInterface(res.value.pets, res.value.equippedPetIds));
+            }
+        });
+    }
+};
+
+function getFusionableGroups(pets) {
+    const counts = {};
+    pets.forEach(p => {
+        const evo = p.evoLevel || 0;
+        if (evo >= 3) return;
+        const key = `${p.name}:${evo}`;
+        if (!counts[key]) counts[key] = { name: p.name, evoLevel: evo, count: 0 };
+        counts[key].count++;
+    });
+    return Object.values(counts).filter(g => g.count >= 4).map(g => ({
+        name: g.name, evoLevel: g.evoLevel,
+        evoName: EVOLUTION_STAGES[g.evoLevel].name ? `[${EVOLUTION_STAGES[g.evoLevel].name}] ` : "",
+        nextEvoName: EVOLUTION_STAGES[g.evoLevel + 1].name
+    }));
+}
