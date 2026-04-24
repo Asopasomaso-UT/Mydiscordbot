@@ -3,13 +3,12 @@ const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const DataModel = mongoose.models.QuickData;
 
-// 設定データの読み込み（パスは環境に合わせて調整してください）
 const { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES } = require('../utils/Pet-data');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペット管理（チーム倍率計算を完全に修正）'),
+        .setDescription('ペット管理（チーム合計倍率の計算を完全に修正）'),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -19,7 +18,6 @@ module.exports = {
         const petKey = `pet_data_${guildId}_${userId}`;
         const moneyKey = `money_${guildId}_${userId}`;
 
-        // --- 共通：売却価格計算 ---
         const calculateSellPrice = (pet) => {
             const petInfo = PET_MASTER[pet.name];
             const rarity = (petInfo?.rarity || 'Common').toLowerCase();
@@ -29,14 +27,12 @@ module.exports = {
             return Math.floor(basePrice * 0.1 * evoBonus);
         };
 
-        // --- 共通：表示名作成 ---
         const getPetDisplayName = (p) => {
             const evoPrefix = EVOLUTION_STAGES[p.evoLevel || 0].name ? `[${EVOLUTION_STAGES[p.evoLevel || 0].name}] ` : "";
             const enchantInfo = p.enchant ? ` ${p.enchant.type} Lv.${p.enchant.level}` : "";
             return `${evoPrefix}${p.name}${enchantInfo}`;
         };
 
-        // --- 画面A: メインUI (装備・ステータス) ---
         const createMainInterface = (currentData) => {
             const pets = currentData.pets || [];
             const equippedIds = currentData.equippedPetIds || [];
@@ -44,27 +40,25 @@ module.exports = {
             const maxEquipSlot = 3 + srCount;
             const equippedPets = pets.filter(p => equippedIds.includes(p.petId));
             
+            // --- 倍率計算開始 ---
             let totalMult = 0;
             equippedPets.forEach(p => {
-                // 1. (基本倍率 * 進化倍率) を算出
+                // 基本倍率(種類) × 進化倍率
                 const basePart = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
                 
-                // 2. エンチャント倍率を算出 (加算方式)
-                let enchantBonus = 0;
+                // エンチャント倍率 (100% + ボーナス%)
+                let enchantFactor = 1.0;
                 if (p.enchant) {
-                    if (p.enchant.type === 'power') {
-                        enchantBonus = p.enchant.level * 0.2; // +20% / Lv
-                    } else if (p.enchant.type === 'mimic') {
-                        enchantBonus = p.enchant.level;       // +100% / Lv
-                    }
+                    if (p.enchant.type === 'power') enchantFactor += (p.enchant.level * 0.2);
+                    else if (p.enchant.type === 'mimic') enchantFactor += p.enchant.level;
                 }
                 
-                // 3. 個別最終倍率 = ベース * (1 + ボーナス)
-                const finalPetMult = basePart * (1 + enchantBonus);
-                totalMult += finalPetMult;
+                // 個別最終 = ベース × エンチャント倍率
+                totalMult += (basePart * enchantFactor);
             });
 
             const displayTotal = totalMult <= 0 ? "1.00" : totalMult.toFixed(2);
+            // --- 倍率計算終了 ---
 
             const embed = new EmbedBuilder()
                 .setTitle(`🐾 ペットチーム管理`)
@@ -75,8 +69,8 @@ module.exports = {
                     value: equippedPets.length > 0 
                         ? equippedPets.map(p => {
                             const pBase = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
-                            const pEnchant = p.enchant ? (p.enchant.type === 'power' ? 1 + p.enchant.level * 0.2 : 1 + p.enchant.level) : 1;
-                            const pFinal = (pBase * pEnchant).toFixed(2);
+                            const pBonus = p.enchant ? (p.enchant.type === 'power' ? 1 + p.enchant.level * 0.2 : 1 + p.enchant.level) : 1;
+                            const pFinal = (pBase * pBonus).toFixed(2);
                             return `✅ **${getPetDisplayName(p)}** (x${pFinal})`;
                         }).join('\n') 
                         : 'なし'
@@ -93,7 +87,7 @@ module.exports = {
                         .setMaxValues(Math.min(displayPets.length, maxEquipSlot))
                         .addOptions(displayPets.map(p => ({
                             label: getPetDisplayName(p),
-                            description: `基本: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
+                            description: `基本倍率: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
                             value: p.petId,
                             default: equippedIds.includes(p.petId)
                         })))
@@ -107,49 +101,37 @@ module.exports = {
             return { embeds: [embed], components: rows };
         };
 
-        // --- 画面B: 進化メニューUI ---
+        // --- 以下、進化/売却/コレクターロジック（変更なし） ---
         const createFusionInterface = (pets) => {
             const groups = getFusionableGroups(pets);
             const embed = new EmbedBuilder().setTitle('🧪 ペット進化合成').setColor('Purple').setDescription('同じペット4体を消費して進化させます。');
-            const rows = [];
+            const rows = [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('goto_main').setLabel('戻る').setStyle(ButtonStyle.Secondary))];
             if (groups.length > 0) {
-                rows.push(new ActionRowBuilder().addComponents(
+                rows.unshift(new ActionRowBuilder().addComponents(
                     new StringSelectMenuBuilder().setCustomId('exec_fusion').setPlaceholder('進化させるペットを選択')
-                        .addOptions(groups.map(g => ({ 
-                            label: `${g.evoName}${g.name}`, 
-                            description: `4体を消費して ${g.nextEvoName} に進化`, 
-                            value: `${g.name}:${g.evoLevel}` 
-                        })))
+                        .addOptions(groups.map(g => ({ label: `${g.evoName}${g.name}`, description: `4体を消費して ${g.nextEvoName} に進化`, value: `${g.name}:${g.evoLevel}` })))
                 ));
             } else {
                 embed.setDescription('❌ 現在進化可能な4体セットのペットはいません。');
             }
-            rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('goto_main').setLabel('戻る').setStyle(ButtonStyle.Secondary)));
             return { embeds: [embed], components: rows };
         };
 
-        // --- 画面C: 売却メニューUI ---
         const createSellInterface = (pets, equippedIds) => {
             const sellable = pets.filter(p => !equippedIds.includes(p.petId)).slice(0, 25);
             const embed = new EmbedBuilder().setTitle('💰 ペット個別売却').setColor('Red').setDescription('売却するペットを選択してください。');
-            const rows = [];
+            const rows = [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('goto_main').setLabel('戻る').setStyle(ButtonStyle.Secondary))];
             if (sellable.length > 0) {
-                rows.push(new ActionRowBuilder().addComponents(
+                rows.unshift(new ActionRowBuilder().addComponents(
                     new StringSelectMenuBuilder().setCustomId('exec_sell').setPlaceholder('売却するペットを選択').setMinValues(1).setMaxValues(sellable.length)
-                        .addOptions(sellable.map(p => ({ 
-                            label: getPetDisplayName(p), 
-                            description: `売却価格: ${calculateSellPrice(p).toLocaleString()} 💰`, 
-                            value: p.petId 
-                        })))
+                        .addOptions(sellable.map(p => ({ label: getPetDisplayName(p), description: `売却価格: ${calculateSellPrice(p).toLocaleString()} 💰`, value: p.petId })))
                 ));
             } else {
                 embed.setDescription('❌ 売却できるペット（装備外）がいません。');
             }
-            rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('goto_main').setLabel('戻る').setStyle(ButtonStyle.Secondary)));
             return { embeds: [embed], components: rows };
         };
 
-        // --- ロジック実行 ---
         const initialDoc = await DataModel.findOne({ id: petKey });
         if (!initialDoc || !initialDoc.value?.pets?.length) return await interaction.editReply('ペットを所持していません。');
 
@@ -177,7 +159,6 @@ module.exports = {
                 if (targets.length < 4) return;
                 const targetIds = targets.map(t => t.petId);
                 const remaining = data.pets.filter(p => !targetIds.includes(p.petId));
-                // エンチャント等を維持して進化
                 remaining.push({ ...targets[0], petId: uuidv4(), evoLevel: evo + 1, obtainedAt: Date.now() });
                 const newEquip = (data.equippedPetIds || []).filter(id => !targetIds.includes(id));
                 const updated = await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining, 'value.equippedPetIds': newEquip } }, { returnDocument: 'after' });
