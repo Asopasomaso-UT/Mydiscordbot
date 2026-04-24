@@ -8,7 +8,7 @@ const { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES } = require('../utils/Pet-data'
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペット管理（チーム合計倍率の計算を完全に修正）'),
+        .setDescription('ペット管理'),
 
     async execute(interaction) {
         await interaction.deferReply();
