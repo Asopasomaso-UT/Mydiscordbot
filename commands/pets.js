@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
 const DataModel = mongoose.models.QuickData;
@@ -9,21 +9,17 @@ const { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES } = require('../utils/Pet-data'
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペットの管理・進化・売却を行います'),
+        .setDescription('ペットの管理・進化・売却を1つの画面で行います'),
 
     async execute(interaction) {
-        try {
-            await interaction.deferReply();
-        } catch (err) {
-            return console.error("deferReply Error:", err);
-        }
+        await interaction.deferReply();
 
         const guildId = interaction.guild.id;
         const userId = interaction.user.id;
         const petKey = `pet_data_${guildId}_${userId}`;
         const moneyKey = `money_${guildId}_${userId}`;
 
-        // --- 売却価格計算ロジック ---
+        // --- 共通：売却価格計算 ---
         const calculateSellPrice = (pet) => {
             const petInfo = PET_MASTER[pet.name];
             const rarity = (petInfo?.rarity || 'Common').toLowerCase();
@@ -33,7 +29,7 @@ module.exports = {
             return Math.floor(basePrice * 0.1 * evoBonus);
         };
 
-        // --- メインUI生成関数 ---
+        // --- 画面A: メインUI (装備・ステータス) ---
         const createMainInterface = (currentData) => {
             const pets = currentData.pets || [];
             const equippedIds = currentData.equippedPetIds || [];
@@ -50,165 +46,131 @@ module.exports = {
             });
 
             const embed = new EmbedBuilder()
-                .setTitle(`🐾 ${interaction.user.username} のペット`)
+                .setTitle(`🐾 ペットチーム管理`)
                 .setColor('Blue')
-                .setDescription([
-                    `最大装備枠: **${maxEquipSlot}** 匹`,
-                    `チーム合計倍率: **x${(totalMult || 1).toFixed(2)}**`,
-                    `総所持数: **${pets.length}** 匹`
-                ].join('\n'))
+                .setDescription(`最大枠: **${maxEquipSlot}** | 倍率: **x${(totalMult || 1.0).toFixed(2)}** | 所持: **${pets.length}**匹`)
                 .addFields({ 
                     name: `⚔️ 装備中 (${equippedPets.length}/${maxEquipSlot})`, 
-                    value: equippedPets.length > 0 
-                        ? equippedPets.map(p => `✅ **${EVOLUTION_STAGES[p.evoLevel || 0].name || ''}${p.name}**`).join('\n')
-                        : 'なし'
+                    value: equippedPets.length > 0 ? equippedPets.map(p => `✅ **${EVOLUTION_STAGES[p.evoLevel || 0].name || ''}${p.name}**`).join('\n') : 'なし'
                 });
 
-            const displayPets = pets.slice(-25).reverse();
             const rows = [];
-
+            const displayPets = pets.slice(-25).reverse();
             if (displayPets.length > 0) {
-                const select = new StringSelectMenuBuilder()
-                    .setCustomId('pet_equip_toggle')
-                    .setPlaceholder('装備切り替え（最新25匹）')
-                    .setMinValues(0)
-                    .setMaxValues(Math.min(displayPets.length, maxEquipSlot))
-                    .addOptions(displayPets.map(p => ({
-                        label: `${EVOLUTION_STAGES[p.evoLevel || 0].name || ''}${p.name}`,
-                        description: `倍率: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
-                        value: p.petId,
-                        default: equippedIds.includes(p.petId)
-                    })));
-                rows.push(new ActionRowBuilder().addComponents(select));
+                rows.push(new ActionRowBuilder().addComponents(
+                    new StringSelectMenuBuilder().setCustomId('pet_equip_toggle').setPlaceholder('装備を切り替える').setMinValues(0).setMaxValues(Math.min(displayPets.length, maxEquipSlot))
+                        .addOptions(displayPets.map(p => ({
+                            label: `${EVOLUTION_STAGES[p.evoLevel || 0].name || ''}${p.name}`,
+                            description: `倍率: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
+                            value: p.petId,
+                            default: equippedIds.includes(p.petId)
+                        })))
+                ));
             }
-
-            const buttons = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('open_fusion_menu').setLabel('進化合成').setStyle(ButtonStyle.Primary).setEmoji('🧪'),
-                new ButtonBuilder().setCustomId('open_sell_menu').setLabel('個別売却').setStyle(ButtonStyle.Danger).setEmoji('💰'),
-                new ButtonBuilder().setCustomId('bulk_sell_low').setLabel('低レア一括売却').setStyle(ButtonStyle.Secondary).setEmoji('🗑️')
-            );
-            rows.push(buttons);
-
+            rows.push(new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('goto_fusion').setLabel('進化画面へ').setStyle(ButtonStyle.Primary).setEmoji('🧪'),
+                new ButtonBuilder().setCustomId('goto_sell').setLabel('売却画面へ').setStyle(ButtonStyle.Danger).setEmoji('💰'),
+                new ButtonBuilder().setCustomId('bulk_sell_low').setLabel('低レア一括処分').setStyle(ButtonStyle.Secondary).setEmoji('🗑️')
+            ));
             return { embeds: [embed], components: rows };
         };
 
-        // --- 排他制御用：メイン画面を一時無効化する関数 ---
-        const setMainWaiting = async () => {
-            const waitingEmbed = new EmbedBuilder()
-                .setTitle("⏳ 処理中...")
-                .setColor("Orange")
-                .setDescription("別のメニューを表示しています。操作が終わるまでお待ちください...");
-            await interaction.editReply({ embeds: [waitingEmbed], components: [] });
+        // --- 画面B: 進化メニューUI ---
+        const createFusionInterface = (pets) => {
+            const groups = getFusionableGroups(pets);
+            const embed = new EmbedBuilder().setTitle('🧪 ペット進化合成').setColor('Purple').setDescription('同じペット4体を消費して1段階上のランクへ進化させます。');
+            const rows = [];
+            if (groups.length > 0) {
+                rows.push(new ActionRowBuilder().addComponents(
+                    new StringSelectMenuBuilder().setCustomId('exec_fusion').setPlaceholder('進化させるペットを選択')
+                        .addOptions(groups.map(g => ({ label: `${g.evoName}${g.name}`, description: `4体を消費して ${g.nextEvoName} に進化`, value: `${g.name}:${g.evoLevel}` })))
+                ));
+            } else {
+                embed.setDescription('❌ 現在進化可能な4体セットのペットはいません。');
+            }
+            rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('goto_main').setLabel('戻る').setStyle(ButtonStyle.Secondary)));
+            return { embeds: [embed], components: rows };
         };
 
-        // --- コレクター処理 ---
-        try {
-            const initialDoc = await DataModel.findOne({ id: petKey });
-            if (!initialDoc || !initialDoc.value?.pets?.length) return await interaction.editReply('ペットを所持していません。');
+        // --- 画面C: 売却メニューUI ---
+        const createSellInterface = (pets, equippedIds) => {
+            const sellable = pets.filter(p => !equippedIds.includes(p.petId)).slice(0, 25);
+            const embed = new EmbedBuilder().setTitle('💰 ペット個別売却').setColor('Red').setDescription('売却したいペットを選択してください（装備中は表示されません）。');
+            const rows = [];
+            if (sellable.length > 0) {
+                rows.push(new ActionRowBuilder().addComponents(
+                    new StringSelectMenuBuilder().setCustomId('exec_sell').setPlaceholder('売却するペットを選択').setMinValues(1).setMaxValues(sellable.length)
+                        .addOptions(sellable.map(p => ({ label: `${p.name}`, description: `売却価格: ${calculateSellPrice(p).toLocaleString()} 💰`, value: p.petId })))
+                ));
+            } else {
+                embed.setDescription('❌ 売却できるペット（装備外）がいません。');
+            }
+            rows.push(new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('goto_main').setLabel('戻る').setStyle(ButtonStyle.Secondary)));
+            return { embeds: [embed], components: rows };
+        };
 
-            let response = await interaction.editReply(createMainInterface(initialDoc.value));
-            const collector = response.createMessageComponentCollector({ filter: i => i.user.id === interaction.user.id, time: 600000 });
+        // --- ロジック実行 ---
+        const initialDoc = await DataModel.findOne({ id: petKey });
+        if (!initialDoc || !initialDoc.value?.pets?.length) return await interaction.editReply('ペットを所持していません。');
 
-            collector.on('collect', async (i) => {
-                try { await i.deferUpdate(); } catch (e) { return; }
+        const response = await interaction.editReply(createMainInterface(initialDoc.value));
+        const collector = response.createMessageComponentCollector({ filter: i => i.user.id === interaction.user.id, time: 600000 });
 
-                const latestDoc = await DataModel.findOne({ id: petKey });
-                const currentData = latestDoc.value;
+        collector.on('collect', async (i) => {
+            await i.deferUpdate().catch(() => {});
+            const latest = await DataModel.findOne({ id: petKey });
+            const data = latest.value;
 
-                // 1. 装備切り替え
-                if (i.customId === 'pet_equip_toggle') {
-                    const updated = await DataModel.findOneAndUpdate(
-                        { id: petKey }, 
-                        { $set: { 'value.equippedPetIds': i.values } }, 
-                        { returnDocument: 'after' }
-                    );
-                    await interaction.editReply(createMainInterface(updated.value));
-                }
+            // 画面遷移
+            if (i.customId === 'goto_main') await interaction.editReply(createMainInterface(data));
+            if (i.customId === 'goto_fusion') await interaction.editReply(createFusionInterface(data.pets));
+            if (i.customId === 'goto_sell') await interaction.editReply(createSellInterface(data.pets, data.equippedPetIds));
 
-                // 2. 進化メニュー表示
-                if (i.customId === 'open_fusion_menu') {
-                    const groups = getFusionableGroups(currentData.pets);
-                    if (!groups.length) return i.followUp({ content: '進化可能な4体セットがいません。', flags: [MessageFlags.Ephemeral] });
+            // 装備切り替え
+            if (i.customId === 'pet_equip_toggle') {
+                const updated = await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.equippedPetIds': i.values } }, { returnDocument: 'after' });
+                await interaction.editReply(createMainInterface(updated.value));
+            }
 
-                    await setMainWaiting(); // メイン画面を一時消去
+            // 進化実行
+            if (i.customId === 'exec_fusion') {
+                const [pName, pEvo] = i.values[0].split(':');
+                const evo = parseInt(pEvo);
+                const targets = data.pets.filter(p => p.name === pName && (p.evoLevel || 0) === evo).slice(0, 4);
+                if (targets.length < 4) return;
+                const targetIds = targets.map(t => t.petId);
+                const remaining = data.pets.filter(p => !targetIds.includes(p.petId));
+                remaining.push({ ...targets[0], petId: uuidv4(), evoLevel: evo + 1, obtainedAt: Date.now() });
+                const newEquip = (data.equippedPetIds || []).filter(id => !targetIds.includes(id));
+                const updated = await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining, 'value.equippedPetIds': newEquip } }, { returnDocument: 'after' });
+                await interaction.editReply(createFusionInterface(updated.value.pets)); // 進化画面のまま更新
+            }
 
-                    const menu = new StringSelectMenuBuilder().setCustomId('exec_fusion').setPlaceholder('進化させるペットを選択');
-                    groups.forEach(g => menu.addOptions({ label: `${g.evoName}${g.name}`, description: `4体を消費して ${g.nextEvoName} へ`, value: `${g.name}:${g.evoLevel}` }));
-                    await i.followUp({ content: '🧪 **進化合成**', components: [new ActionRowBuilder().addComponents(menu)], flags: [MessageFlags.Ephemeral] });
-                }
+            // 売却実行
+            if (i.customId === 'exec_sell') {
+                const targets = data.pets.filter(p => i.values.includes(p.petId));
+                const totalGain = targets.reduce((sum, p) => sum + calculateSellPrice(p), 0);
+                const remaining = data.pets.filter(p => !i.values.includes(p.petId));
+                await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining } });
+                await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: totalGain } });
+                const res = await DataModel.findOne({ id: petKey });
+                await interaction.editReply(createSellInterface(res.value.pets, res.value.equippedPetIds)); // 売却画面のまま更新
+            }
 
-                // 3. 個別売却メニュー表示
-                if (i.customId === 'open_sell_menu') {
-                    const sellable = currentData.pets.filter(p => !currentData.equippedPetIds.includes(p.petId)).slice(0, 25);
-                    if (!sellable.length) return i.followUp({ content: '売却可能なペット（装備中以外）がいません。', flags: [MessageFlags.Ephemeral] });
-
-                    await setMainWaiting(); // メイン画面を一時消去
-
-                    const menu = new StringSelectMenuBuilder().setCustomId('exec_sell').setPlaceholder('売却するペットを選択（複数可）').setMinValues(1).setMaxValues(sellable.length);
-                    sellable.forEach(p => menu.addOptions({ label: `${p.name}`, description: `売却価格: ${calculateSellPrice(p).toLocaleString()} 💰`, value: p.petId }));
-                    await i.followUp({ content: '💰 **個別売却**', components: [new ActionRowBuilder().addComponents(menu)], flags: [MessageFlags.Ephemeral] });
-                }
-
-                // 4. 低レア一括売却
-                if (i.customId === 'bulk_sell_low') {
-                    const targets = currentData.pets.filter(p => {
-                        const r = (PET_MASTER[p.name]?.rarity || '').toLowerCase();
-                        return (r === 'common' || r === 'uncommon') && !currentData.equippedPetIds.includes(p.petId);
-                    });
-
-                    if (!targets.length) return i.followUp({ content: '対象がいません（Common/Uncommonかつ装備外）。', flags: [MessageFlags.Ephemeral] });
-
-                    const totalGain = targets.reduce((sum, p) => sum + calculateSellPrice(p), 0);
-                    const remaining = currentData.pets.filter(p => !targets.some(t => t.petId === p.petId));
-
-                    await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining } });
-                    await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: totalGain } });
-
-                    await interaction.editReply(createMainInterface({ ...currentData, pets: remaining }));
-                    await i.followUp({ content: `🗑️ **一括売却完了**\n${targets.length}匹を売却し、**${totalGain.toLocaleString()}** 💰 獲得しました。`, flags: [MessageFlags.Ephemeral] });
-                }
-
-                // 実行：進化
-                if (i.customId === 'exec_fusion') {
-                    const [pName, pEvo] = i.values[0].split(':');
-                    const evo = parseInt(pEvo);
-                    const targets = currentData.pets.filter(p => p.name === pName && (p.evoLevel || 0) === evo).slice(0, 4);
-                    if (targets.length < 4) {
-                        await i.editReply({ content: "❌ ペットが足りなくなりました。再試行してください。", components: [] });
-                        const res = await DataModel.findOne({ id: petKey });
-                        return await interaction.editReply(createMainInterface(res.value));
-                    }
-
-                    const targetIds = targets.map(t => t.petId);
-                    const remaining = currentData.pets.filter(p => !targetIds.includes(p.petId));
-                    remaining.push({ ...targets[0], petId: uuidv4(), evoLevel: evo + 1, obtainedAt: Date.now() });
-                    const newEquip = (currentData.equippedPetIds || []).filter(id => !targetIds.includes(id));
-
-                    const updated = await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining, 'value.equippedPetIds': newEquip } }, { returnDocument: 'after' });
-                    
-                    await i.editReply({ content: '✅ 進化が完了しました！', components: [] });
-                    await interaction.editReply(createMainInterface(updated.value)); // メイン画面復活
-                }
-
-                // 実行：個別売却
-                if (i.customId === 'exec_sell') {
-                    const selectedIds = i.values;
-                    const targets = currentData.pets.filter(p => selectedIds.includes(p.petId));
-                    const totalGain = targets.reduce((sum, p) => sum + calculateSellPrice(p), 0);
-                    const remaining = currentData.pets.filter(p => !selectedIds.includes(p.petId));
-
-                    await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining } });
-                    await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: totalGain } });
-
-                    await i.editReply({ content: `✅ ${targets.length}匹を売却しました (+${totalGain.toLocaleString()} 💰)`, components: [] });
-                    const res = await DataModel.findOne({ id: petKey });
-                    await interaction.editReply(createMainInterface(res.value)); // メイン画面復活
-                }
-            });
-
-        } catch (error) {
-            console.error("Pet System Error:", error);
-        }
+            // 一括売却
+            if (i.customId === 'bulk_sell_low') {
+                const targets = data.pets.filter(p => {
+                    const r = (PET_MASTER[p.name]?.rarity || '').toLowerCase();
+                    return (r === 'common' || r === 'uncommon') && !data.equippedPetIds.includes(p.petId);
+                });
+                if (!targets.length) return;
+                const totalGain = targets.reduce((sum, p) => sum + calculateSellPrice(p), 0);
+                const remaining = data.pets.filter(p => !targets.some(t => t.petId === p.petId));
+                await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining } });
+                await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: totalGain } });
+                await interaction.editReply(createMainInterface({ ...data, pets: remaining }));
+            }
+        });
     }
 };
 
