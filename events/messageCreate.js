@@ -5,6 +5,46 @@ const DataModel = mongoose.models.QuickData;
 // クールダウン管理 (メモリリーク防止のため、実用時はRedisやDB検討もアリ)
 const cooldowns = new Set();
 
+/**
+ * 節目レベルの報酬を定義する関数
+ * @param {number} level 
+ * @returns {object} { bonusMoney, bonusText, bonusItems }
+ */
+function getLevelBonus(level) {
+    let bonusMoney = 0;
+    let bonusText = "";
+    let bonusItems = null; // 例: { "value.inventory.Exotic_egg": 1 }
+
+    switch (level) {
+        case 10:
+            bonusMoney = 50000;
+            bonusText = "🔓 **レベル10到達!**";
+            break;
+        case 20:
+            bonusMoney = 150000;
+            bonusText = "🌟 **レベル20到達!**";
+            bonusItems = { "value.inventory.Exotic_egg": 1 };
+            break;
+        case 30:
+            bonusMoney = 500000;
+            bonusText = "🔥 **レベル30到達!**";
+            bonusItems = { "value.inventory.Exotic_egg": 3 };
+            break;
+        case 40:
+            bonusMoney = 1000000;
+            bonusText = "💎 **レベル40到達ボ!**";
+            bonusItems = { "value.inventory.slime_egg": 3 };
+            break;
+        case 50:
+            bonusMoney = 5000000;
+            bonusText = "👑 **レベル50到達!**";
+            bonusItems = { "value.inventory.Undertale_egg": 1 };
+            break;
+    }
+
+    return { bonusMoney, bonusText, bonusItems };
+}
+
 module.exports = {
     name: Events.MessageCreate,
     async execute(message) {

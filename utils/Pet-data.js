@@ -19,11 +19,13 @@ const PET_MASTER = {
     'キツネ': { rarity: 'Rare', multiplier: 1.25 },
     '人魚': { rarity: 'Epic', multiplier: 1.40 },
     'スライムの英雄': { rarity: 'Epic', multiplier: 1.40 },
+    'Flowey': { rarity: 'Epic', multiplier: 1.40 },
     'レジェンドスライム': { rarity: 'Legendary', multiplier: 1.50 },
     'フェニックス': { rarity: 'Legendary', multiplier: 1.50 },
     'ユニコーン': { rarity: 'Legendary', multiplier: 1.50 },
     '白虎': { rarity: 'Legendary', multiplier: 1.50 },
     '九尾': { rarity: 'Legendary', multiplier: 1.50 },
+    'Toriel': { rarity: 'Legendary', multiplier: 1.50 },
     'グリフィン': { rarity: 'Legendary', multiplier: 1.50 },
     '半魚人': { rarity: 'Legendary', multiplier: 1.50 },
     '神話のスライム': { rarity: 'Mythic', multiplier: 2.00 },
@@ -33,10 +35,13 @@ const PET_MASTER = {
     'リヴァイアサン': { rarity: 'Mythic', multiplier: 2.00 },
     'アーサー王の馬': { rarity: 'Mythic', multiplier: 2.00 },
     '魚人': { rarity: 'Mythic', multiplier: 2.00 },   
+    'Undyne': { rarity: 'Mythic', multiplier: 2.00 }, 
     'ドラクエスライム': { rarity: 'Unique', multiplier: 4.00 },
     '海蛇': { rarity: 'Unique', multiplier: 4.00 },
+    'Asgore': { rarity: 'Unique', multiplier: 4.00 },
     'Minecraft slime': { rarity: 'Artifact', multiplier: 25.00 },
     'シーモンキー': { rarity: 'Artifact', multiplier: 10.00 },
+    'Sans': { rarity: 'Artifact', multiplier: 20.00 },
     '首無し騎士': { rarity: 'Secret', multiplier: 75.00 },
     'Skibidi toilet': { rarity: 'Secret', multiplier: 80.00 },
     'スマーフキャット': { rarity: 'Secret', multiplier: 105.00 },
@@ -78,6 +83,12 @@ const EGG_CONFIG = {
         // 複数レアリティが混ざる場合の例
         rates: { 'Common': 40, 'Uncommon': 30, 'Rare': 15, 'Epic': 10, 'Legendary': 4, 'Mythic': 1 },
         contents: ['スライム', 'キラキラスライム', 'レアスライム', 'スライムの英雄', 'レジェンドスライム', '神話のスライム', 'ドラクエスライム', 'Minecraft slime']
+    },
+    'Undertale_egg': {
+        name: 'Undertale Egg', price: 500000,
+        // 複数レアリティが混ざる場合の例
+        rates: {'Epic': 40, 'Legendary': 30, 'Mythic': 10, 'Unique':15, 'Artifact':5 },
+        contents: ['Flowey', 'Toriel', 'Undyne', 'Asgore', 'Sans']
     },
     'Exotic_egg': {
         name: 'Exotic Egg', price: 10, isSuperShop: true,
