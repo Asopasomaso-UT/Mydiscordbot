@@ -8,7 +8,7 @@ const { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES } = require('../utils/Pet-data'
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペット管理（倍率計算の型一致とMimicを完全に修正）'),
+        .setDescription('ペット管理（Mimic倍率を強制適用）'),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -26,35 +26,40 @@ module.exports = {
 
         const createMainInterface = (currentData) => {
             const pets = currentData.pets || [];
-            // IDの型（String）を確実にする
             const equippedIds = (currentData.equippedPetIds || []).map(id => String(id));
             const srCount = currentData.superRebirthCount || 0;
             const maxEquipSlot = 3 + srCount;
-
-            // 装備中のペットを確実に抽出
             const equippedPets = pets.filter(p => equippedIds.includes(String(p.petId)));
             
             let totalMult = 0;
-            equippedPets.forEach(p => {
-                // 基本倍率 × 進化倍率
-                const basePart = Number(p.multiplier || 1) * Number(EVOLUTION_STAGES[p.evoLevel || 0].multiplier);
-                
-                // エンチャント倍率 (加算ベース)
-                let enchantFactor = 1.0;
-                if (p.enchant) {
-                    const lv = Number(p.enchant.level || 0);
-                    if (p.enchant.type === 'power') {
-                        enchantFactor += (lv * 0.2); // +20% / Lv
-                    } else if (p.enchant.type === 'mimic') {
-                        enchantFactor += lv;       // +100% / Lv
+            const equippedListStrings = equippedPets.map(p => {
+                // 1. 基本倍率の取得 (アソパソマソなどの種類倍率 × 進化段階)
+                const baseValue = Number(p.multiplier || 1);
+                const evoMultiplier = Number(EVOLUTION_STAGES[p.evoLevel || 0].multiplier || 1);
+                const baseTotal = baseValue * evoMultiplier;
+
+                // 2. エンチャント倍率の確定 (1.0 = 100%)
+                let bonusFactor = 1.0;
+                if (p.enchant && p.enchant.type) {
+                    const type = String(p.enchant.type).toLowerCase();
+                    const level = Number(p.enchant.level || 0);
+
+                    if (type === 'mimic') {
+                        // Mimic Lv.5 なら 1.0 + 5.0 = 6倍
+                        bonusFactor += level;
+                    } else if (type === 'power') {
+                        // Power Lv.5 なら 1.0 + 1.0 = 2倍
+                        bonusFactor += (level * 0.2);
                     }
                 }
-                
-                // 最終加算
-                totalMult += (basePart * enchantFactor);
+
+                // 3. このペットの最終的な倍率
+                const finalIndividual = baseTotal * bonusFactor;
+                totalMult += finalIndividual;
+
+                return `✅ **${getPetDisplayName(p)}** (x${finalIndividual.toFixed(2)})`;
             });
 
-            // 1体も装備していない場合は 1.00 にする
             const displayTotal = totalMult <= 0 ? "1.00" : totalMult.toFixed(2);
 
             const embed = new EmbedBuilder()
@@ -63,17 +68,7 @@ module.exports = {
                 .setDescription(`最大枠: **${maxEquipSlot}** | チーム合計倍率: **x${displayTotal}**\n所持数: **${pets.length}** 匹`)
                 .addFields({ 
                     name: `⚔️ 装備中 (${equippedPets.length}/${maxEquipSlot})`, 
-                    value: equippedPets.length > 0 
-                        ? equippedPets.map(p => {
-                            const pBase = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
-                            let pFactor = 1.0;
-                            if (p.enchant) {
-                                if (p.enchant.type === 'power') pFactor += p.enchant.level * 0.2;
-                                else if (p.enchant.type === 'mimic') pFactor += p.enchant.level;
-                            }
-                            return `✅ **${getPetDisplayName(p)}** (x${(pBase * pFactor).toFixed(2)})`;
-                        }).join('\n') 
-                        : 'なし'
+                    value: equippedListStrings.length > 0 ? equippedListStrings.join('\n') : 'なし'
                 });
 
             const rows = [];
@@ -102,6 +97,8 @@ module.exports = {
         };
 
         // --- 以下、補助UI (Fusion/Sell) とコレクター ---
+        // (省略せずに全文配置します)
+
         const createFusionInterface = (pets) => {
             const groups = getFusionableGroups(pets);
             const embed = new EmbedBuilder().setTitle('🧪 ペット進化合成').setColor('Purple');
@@ -164,7 +161,9 @@ module.exports = {
 
             if (i.customId === 'exec_sell') {
                 const remaining = data.pets.filter(p => !i.values.includes(String(p.petId)));
+                const totalGain = data.pets.filter(p => i.values.includes(String(p.petId))).reduce((s, p) => s + 100, 0); // 仮の売却価格
                 await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining } });
+                await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: totalGain } });
                 const res = await DataModel.findOne({ id: petKey });
                 await interaction.editReply(createSellInterface(res.value.pets, res.value.equippedPetIds));
             }
