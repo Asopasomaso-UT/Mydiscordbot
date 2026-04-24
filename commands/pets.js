@@ -54,7 +54,7 @@ module.exports = {
                     if (p.enchant.type === 'power') {
                         m *= (1 + p.enchant.level * 0.2); // +20% / Lv
                     } else if (p.enchant.type === 'mimic') {
-                        m *= (1 + p.enchant.level); // +100% / Lv (Lv.1で2倍、Lv.2で3倍...)
+                        m *= (1 + p.enchant.level* 1); // +100% / Lv (Lv.1で2倍、Lv.2で3倍...)
                     }
                 }
                 totalMult += m;
