@@ -9,7 +9,7 @@ const { PET_MASTER, EGG_CONFIG, EVOLUTION_STAGES } = require('../utils/Pet-data'
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('pets')
-        .setDescription('ペット管理（Mimic倍率計算を修正）'),
+        .setDescription('ペット管理'),
 
     async execute(interaction) {
         await interaction.deferReply();
@@ -64,9 +64,9 @@ module.exports = {
             const displayTotal = totalMult === 0 ? "1.00" : totalMult.toFixed(2);
 
             const embed = new EmbedBuilder()
-                .setTitle(`🐾 ペットチーム管理`)
+                .setTitle(`🐾 ペットチーム`)
                 .setColor('Blue')
-                .setDescription(`最大枠: **${maxEquipSlot}** | チーム倍率: **x${displayTotal}** | 所持: **${pets.length}**匹`)
+                .setDescription(`装備枠: **${maxEquipSlot}** | チーム倍率: **x${displayTotal}** | 所持: **${pets.length}**匹`)
                 .addFields({ 
                     name: `⚔️ 装備中 (${equippedPets.length}/${maxEquipSlot})`, 
                     value: equippedPets.length > 0 
@@ -85,7 +85,7 @@ module.exports = {
                         .setMaxValues(Math.min(displayPets.length, maxEquipSlot))
                         .addOptions(displayPets.map(p => ({
                             label: getPetDisplayName(p),
-                            description: `単品倍率: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
+                            description: `倍率: x${((p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier).toFixed(2)}`,
                             value: p.petId,
                             default: equippedIds.includes(p.petId)
                         })))
