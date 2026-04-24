@@ -17,32 +17,32 @@ module.exports = {
         try {
             const petData = await DataModel.findOne({ id: petKey });
             
-            // --- 合計倍率の計算 ---
+            // --- 【修正済み】合計倍率の計算ロジック ---
             let totalMultiplier = 0;
             const pets = petData?.value?.pets || [];
-            const equippedIds = petData?.value?.equippedPetIds || [];
-            const equippedPets = pets.filter(p => equippedIds.includes(p.petId));
+            const equippedIds = (petData?.value?.equippedPetIds || []).map(id => String(id));
+            const equippedPets = pets.filter(p => equippedIds.includes(String(p.petId)));
 
             equippedPets.forEach(p => {
-                // 1. 基本種族倍率 × 進化倍率 (Golden/Shiny/Neon)
-                let petMult = (p.multiplier || 1) * EVOLUTION_STAGES[p.evoLevel || 0].multiplier;
-    
-                // 2. エンチャント補正
+                // 基本種族倍率 × 進化倍率
+                const basePart = Number(p.multiplier || 1) * Number(EVOLUTION_STAGES[p.evoLevel || 0].multiplier || 1);
+                
+                // エンチャント補正 (1.0 = 100%)
+                let enchantFactor = 1.0;
                 if (p.enchant) {
-                    if (p.enchant.type === 'power') {
-                    // Power: 1Lvにつき +20%
-                    petMult *= (1 + (p.enchant.level * 0.2));
-                } else if (p.enchant.type === 'mimic') {
-                    // Mimic: 1Lvにつき +100% (2倍, 3倍, 4倍...と増える)
-                    // 伝説級にふさわしい超強力な補正
-                    petMult *= (1 + p.enchant.level); 
+                    const type = String(p.enchant.type).toLowerCase();
+                    const lv = Number(p.enchant.level || 0);
+                    if (type === 'power') {
+                        enchantFactor += (lv * 0.2);
+                    } else if (type === 'mimic') {
+                        enchantFactor += lv;
                     }
                 }
-    
-                totalMultiplier += petMult;
+                
+                totalMultiplier += (basePart * enchantFactor);
             });
 
-            // 1匹もいない場合は 1倍
+            // 装備がない場合は 1.0倍
             if (totalMultiplier < 1) totalMultiplier = 1.0;
 
             const baseAmount = 10;
