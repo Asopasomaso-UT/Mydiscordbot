@@ -50,6 +50,7 @@ const PET_MASTER = {
     'Angel of darkness': { rarity: 'Secret', multiplier: 150.00 }, 
     'おにっぴ': { rarity: 'Secret', multiplier: 140.00 },
     '野獣先輩': { rarity: 'Secret', multiplier: 114.51 },
+    'Undyne the Undying': { rarity: 'Secret', multiplier: 99.00 },
 };
 
 const EGG_CONFIG = {
@@ -87,8 +88,8 @@ const EGG_CONFIG = {
     'Undertale_egg': {
         name: 'Undertale Egg', price: 500000,
         // 複数レアリティが混ざる場合の例
-        rates: {'Epic': 40, 'Legendary': 30, 'Mythic': 10, 'Unique':15, 'Artifact':5 },
-        contents: ['Flowey', 'Toriel', 'Undyne', 'Asgore', 'Sans']
+        rates: {'Epic': 40, 'Legendary': 30, 'Mythic': 10, 'Unique':15, 'Artifact':4.85, 'secret':0.15 },
+        contents: ['Flowey', 'Toriel', 'Undyne', 'Asgore', 'Sans', 'Undyne the Undying']
     },
     'Exotic_egg': {
         name: 'Exotic Egg', price: 10, isSuperShop: true,
