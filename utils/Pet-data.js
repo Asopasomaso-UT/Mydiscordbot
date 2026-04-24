@@ -129,7 +129,13 @@ const SC_SHOP_ITEMS = {
         price: 10,
         type: 'egg', // 種類を分ける
         Egg_key: 'Exotic egg'
-    }
+    },
+    'Premium_egg': {
+        name: 'Premium egg',
+        price: 30,
+        type: 'egg', // 種類を分ける
+        Egg_key: 'Premium egg'
+    },
 };
 
 const ENCHANT_TYPES = {

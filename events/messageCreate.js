@@ -33,12 +33,12 @@ function getLevelBonus(level) {
         case 40:
             bonusMoney = 1000000;
             bonusText = "💎 **レベル40到達ボ!**";
-            bonusItems = { "value.inventory.slime_egg": 3 };
+            bonusItems = { "value.inventory.Exotic_egg": 5 };
             break;
         case 50:
             bonusMoney = 5000000;
             bonusText = "👑 **レベル50到達!**";
-            bonusItems = { "value.inventory.Undertale_egg": 1 };
+            bonusItems = { "value.inventory.Undertale_egg": 15 };
             break;
     }
 
