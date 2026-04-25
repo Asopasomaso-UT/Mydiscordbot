@@ -1,6 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const mongoose = require('mongoose');
 const DataModel = mongoose.models.QuickData;
+const { parseCoin, formatCoin } = require('../utils/formatHelper');
 
 const SYMBOLS = ['🍎', '💎', '🌟', '🔔', '🍒', '7️⃣'];
 
@@ -8,77 +9,58 @@ module.exports = {
     data: new SlashCommandBuilder()
         .setName('slot')
         .setDescription('コインを賭けてスロットを回します')
-        .addIntegerOption(option => 
+        .addStringOption(option => 
             option.setName('bet')
-                .setDescription('賭ける金額')
-                .setRequired(true)
-                .setMinValue(100)),
+                .setDescription('賭け金 (例: 100, 1m, 10b)')
+                .setRequired(true)),
 
     async execute(interaction) {
         const userId = interaction.user.id;
         const guildId = interaction.guild.id;
-        const bet = interaction.options.getInteger('bet');
-        
+        const betInput = interaction.options.getString('bet');
+        const bet = parseCoin(betInput);
+
+        if (bet < 100) return interaction.reply({ content: '最低賭け金は 100 💰 です。', ephemeral: true });
+
         const moneyKey = `money_${guildId}_${userId}`;
-        const petKey = `pet_data_${guildId}_${userId}`;
-
-        // 1. 所持金チェック
         const userData = await DataModel.findOne({ id: moneyKey });
-        const currentMoney = userData?.value || 0;
-        if (currentMoney < bet) return interaction.reply({ content: 'コインが足りません！', ephemeral: true });
+        if ((userData?.value || 0) < bet) return interaction.reply({ content: 'コインが足りません！', ephemeral: true });
 
-        // 2. ペットのボーナスチェック (Mimic Lv1につき当選確率アップなど)
-        const petData = await DataModel.findOne({ id: petKey });
-        const pets = petData?.value?.pets || [];
+        // ペットのMimicボーナス取得
+        const petData = await DataModel.findOne({ id: `pet_data_${guildId}_${userId}` });
         const equippedIds = (petData?.value?.equippedPetIds || []).map(id => String(id));
-        const equippedPets = pets.filter(p => equippedIds.includes(String(p.petId)));
-        
-        let mimicBonus = 0;
-        equippedPets.forEach(p => {
-            if (p.enchant && p.enchant.type === 'mimic') mimicBonus += p.enchant.level;
-        });
+        const mimicLevel = (petData?.value?.pets || [])
+            .filter(p => equippedIds.includes(String(p.petId)) && p.enchant?.type === 'mimic')
+            .reduce((sum, p) => sum + p.enchant.level, 0);
 
-        // 3. スロット回転 (演出用に少し待つ)
-        await interaction.reply({ content: '🎰 スロット回転中...', fetchReply: true });
+        // スロット回転
+        let res = [0, 0, 0].map(() => SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)]);
 
-        const result = [
-            SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)],
-            SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)],
-            SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)]
-        ];
-
-        // ミミックボーナスがある場合、一定確率で3つ目を書き換えて「リーチ」を「当たり」にする
-        if (mimicBonus > 0 && result[0] === result[1] && result[0] !== result[2]) {
-            if (Math.random() < (mimicBonus * 0.05)) result[2] = result[0];
+        // Mimicボーナス (Lv1につき5%でリーチを当たりに書き換え)
+        if (mimicLevel > 0 && res[0] === res[1] && res[0] !== res[2]) {
+            if (Math.random() < (mimicLevel * 0.05)) res[2] = res[0];
         }
 
-        // 4. 当たり判定
-        let multiplier = 0;
-        if (result[0] === result[1] && result[1] === result[2]) {
-            if (result[0] === '7️⃣') multiplier = 15;
-            else if (result[0] === '💎') multiplier = 8;
-            else multiplier = 5;
-        } else if (result[0] === result[1] || result[1] === result[2] || result[0] === result[2]) {
-            multiplier = 1.5; // 2つ揃い
+        // 当たり判定
+        let multi = 0;
+        if (res[0] === res[1] && res[1] === res[2]) {
+            multi = res[0] === '7️⃣' ? 20 : res[0] === '💎' ? 10 : 5;
+        } else if (res[0] === res[1] || res[1] === res[2] || res[0] === res[2]) {
+            multi = 1.5;
         }
 
-        const winAmount = Math.floor(bet * multiplier);
-        const change = winAmount - bet;
-
-        // 5. DB更新
-        await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: change } }, { upsert: true });
+        const win = Math.floor(bet * multi);
+        await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: win - bet } }, { upsert: true });
 
         const embed = new EmbedBuilder()
-            .setTitle('🎰 SLOT RESULT 🎰')
-            .setDescription(`\n　**[ ${result.join(' | ')} ]**\n`)
-            .setColor(multiplier > 0 ? 'Gold' : 'Grey')
+            .setTitle('🎰 SLOT MACHINE')
+            .setDescription(`\n　**[ ${res.join(' | ')} ]**\n`)
             .addFields(
-                { name: '賭け金', value: `${bet.toLocaleString()} 💰`, inline: true },
-                { name: '配当', value: `${winAmount.toLocaleString()} 💰`, inline: true }
-            );
+                { name: 'BET', value: `${formatCoin(bet)} 💰`, inline: true },
+                { name: 'WIN', value: `${formatCoin(win)} 💰`, inline: true }
+            )
+            .setColor(multi > 0 ? 'Gold' : 'Grey');
 
-        if (multiplier > 0) embed.setFooter({ text: 'おめでとうございます！🎉' });
-        
-        return interaction.editReply({ content: '', embeds: [embed] });
+        return interaction.reply({ embeds: [embed] });
     }
 };
