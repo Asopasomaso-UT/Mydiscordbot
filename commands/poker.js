@@ -6,11 +6,12 @@ const { EVOLUTION_STAGES } = require('../utils/Pet-data');
 
 const SUITS = ['♠️', '♥️', '♦️', '♣️'];
 const VALUES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+const VALUE_MAP = { '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13, 'A': 14 };
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('poker')
-        .setDescription('ビデオポーカーで勝負します')
+        .setDescription('ビデオポーカーで勝負します（全役実装済み！）')
         .addStringOption(option => option.setName('bet').setDescription('賭け金 (例: 1m, 10b)').setRequired(true)),
 
     async execute(interaction) {
@@ -31,7 +32,10 @@ module.exports = {
 
         const getEmbed = (h, s) => {
             const cards = h.map((c, i) => `${s.has(i) ? '✅' : '　'}\` ${c.s}${c.v} \``).join('\n');
-            return new EmbedBuilder().setTitle('🃏 VIDEO POKER').setDescription(`交換するカードを選択して「決定」を押してください。\n\n${cards}`).setColor('Blue');
+            return new EmbedBuilder()
+                .setTitle('🃏 VIDEO POKER')
+                .setDescription(`交換するカードを選択して「決定」を押してください。\n\n${cards}`)
+                .setColor('Blue');
         };
 
         const row = new ActionRowBuilder().addComponents([0,1,2,3,4].map(i => new ButtonBuilder().setCustomId(`c_${i}`).setLabel(`${i+1}`).setStyle(ButtonStyle.Secondary)));
@@ -53,7 +57,7 @@ module.exports = {
         collector.on('end', async () => {
             selected.forEach(i => hand[i] = deck.splice(0, 1)[0]);
 
-            // --- じゃんけんと同じ方式の倍率計算 ---
+            // --- 倍率計算（じゃんけん方式） ---
             const petData = await DataModel.findOne({ id: `pet_data_${guildId}_${userId}` });
             let totalMultiplier = 0;
             const pets = petData?.value?.pets || [];
@@ -73,19 +77,30 @@ module.exports = {
             });
             if (totalMultiplier < 1) totalMultiplier = 1.0;
 
-            // 役判定
+            // --- 強化版：役判定ロジック ---
+            const sortedValues = hand.map(c => VALUE_MAP[c.v]).sort((a, b) => a - b);
+            const suits = hand.map(c => c.s);
+            const isFlush = suits.every(s => s === suits[0]);
+            
+            // ストレート判定（A,2,3,4,5の特殊パターンも考慮）
+            let isStraight = sortedValues.every((v, i) => i === 0 || v === sortedValues[i - 1] + 1);
+            if (!isStraight && JSON.stringify(sortedValues) === JSON.stringify([2, 3, 4, 5, 14])) isStraight = true;
+
             const counts = {};
             hand.forEach(c => counts[c.v] = (counts[c.v] || 0) + 1);
-            const pairs = Object.values(counts).filter(v => v === 2).length;
-            const three = Object.values(counts).some(v => v === 3);
-            const four = Object.values(counts).some(v => v === 4);
+            const countArray = Object.values(counts).sort((a, b) => b - a);
 
             let multi = 0, rank = "ノーペア";
-            if (four) { multi = 10; rank = "フォーカード"; }
-            else if (three && pairs === 1) { multi = 7; rank = "フルハウス"; }
-            else if (three) { multi = 3; rank = "スリーカード"; }
-            else if (pairs === 2) { multi = 2; rank = "ツーペア"; }
-            else if (pairs === 1) { multi = 1; rank = "ワンペア"; }
+
+            if (isFlush && isStraight && sortedValues[0] === 10) { multi = 100; rank = "ロイヤルストレートフラッシュ"; }
+            else if (isFlush && isStraight) { multi = 50; rank = "ストレートフラッシュ"; }
+            else if (countArray[0] === 4) { multi = 20; rank = "フォーカード"; }
+            else if (countArray[0] === 3 && countArray[1] === 2) { multi = 10; rank = "フルハウス"; }
+            else if (isFlush) { multi = 7; rank = "フラッシュ"; }
+            else if (isStraight) { multi = 5; rank = "ストレート"; }
+            else if (countArray[0] === 3) { multi = 3; rank = "スリーカード"; }
+            else if (countArray[0] === 2 && countArray[1] === 2) { multi = 2; rank = "ツーペア"; }
+            else if (countArray[0] === 2) { multi = 1; rank = "ワンペア"; }
 
             const win = Math.floor(bet * multi * totalMultiplier);
             const changeAmount = (multi > 0) ? (win - bet) : -bet;
@@ -98,7 +113,7 @@ module.exports = {
 
             const endEmbed = new EmbedBuilder()
                 .setTitle(`🃏 結果: ${rank}`)
-                .setColor(multi > 0 ? 'Green' : 'Red')
+                .setColor(multi > 0 ? (multi >= 50 ? 'Gold' : 'Green') : 'Red')
                 .setDescription([
                     hand.map(c => `\` ${c.s}${c.v} \``).join(' '),
                     `━━━━━━━━━━━━━━`,
