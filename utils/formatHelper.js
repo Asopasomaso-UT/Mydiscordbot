@@ -1,29 +1,66 @@
-// utils/formatHelper.js
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const mongoose = require('mongoose');
+const DataModel = mongoose.models.QuickData;
+const { parseCoin, formatCoin } = require('../utils/formatHelper');
 
-function formatCoin(number) {
-    if (number === null || number === undefined) return "0";
-    const absNum = Math.abs(number);
-    if (absNum < 1000000) return number.toLocaleString();
+const SYMBOLS = ['🍎', '💎', '🌟', '🔔', '🍒', '7️⃣'];
 
-    const suffixes = ["", "", "M", "B", "T", "Qd", "Qn", "Sx", "Sp", "Oc", "No", "Dc"];
-    const tier = Math.floor(Math.log10(absNum) / 3);
-    const suffix = suffixes[tier];
-    const scale = Math.pow(10, tier * 3);
-    const scaled = number / scale;
+module.exports = {
+    data: new SlashCommandBuilder()
+        .setName('slot')
+        .setDescription('コインを賭けてスロットを回します')
+        .addStringOption(option => 
+            option.setName('bet')
+                .setDescription('賭け金 (例: 100, 1m, 10b)')
+                .setRequired(true)),
 
-    return scaled.toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1") + suffix;
-}
+    async execute(interaction) {
+        const userId = interaction.user.id;
+        const guildId = interaction.guild.id;
+        const betInput = interaction.options.getString('bet');
+        const bet = parseCoin(betInput);
 
-function parseCoin(input) {
-    if (typeof input === 'number') return input;
-    if (!input) return 0;
-    const units = { 'm': 1e6, 'b': 1e9, 't': 1e12, 'qd': 1e15, 'qn': 1e18, 'sx': 1e21, 'sp': 1e24, 'oc': 1e27, 'no': 1e30, 'dc': 1e33 };
-    const cleanInput = input.toLowerCase().replace(/,/g, '');
-    const match = cleanInput.match(/^(\d+\.?\d*)(m|b|t|qd|qn|sx|sp|oc|no|dc)?$/);
-    if (!match) return parseInt(cleanInput) || 0;
-    const value = parseFloat(match[1]);
-    const unit = match[2];
-    return unit ? Math.floor(value * units[unit]) : Math.floor(value);
-}
+        if (bet < 100) return interaction.reply({ content: '最低賭け金は 100 💰 です。', ephemeral: true });
 
-module.exports = { formatCoin, parseCoin };
+        const moneyKey = `money_${guildId}_${userId}`;
+        const userData = await DataModel.findOne({ id: moneyKey });
+        if ((userData?.value || 0) < bet) return interaction.reply({ content: 'コインが足りません！', ephemeral: true });
+
+        // ペットのMimicボーナス取得
+        const petData = await DataModel.findOne({ id: `pet_data_${guildId}_${userId}` });
+        const equippedIds = (petData?.value?.equippedPetIds || []).map(id => String(id));
+        const mimicLevel = (petData?.value?.pets || [])
+            .filter(p => equippedIds.includes(String(p.petId)) && p.enchant?.type === 'mimic')
+            .reduce((sum, p) => sum + p.enchant.level, 0);
+
+        // スロット回転
+        let res = [0, 0, 0].map(() => SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)]);
+
+        // Mimicボーナス (Lv1につき5%でリーチを当たりに書き換え)
+        if (mimicLevel > 0 && res[0] === res[1] && res[0] !== res[2]) {
+            if (Math.random() < (mimicLevel * 0.05)) res[2] = res[0];
+        }
+
+        // 当たり判定
+        let multi = 0;
+        if (res[0] === res[1] && res[1] === res[2]) {
+            multi = res[0] === '7️⃣' ? 20 : res[0] === '💎' ? 10 : 5;
+        } else if (res[0] === res[1] || res[1] === res[2] || res[0] === res[2]) {
+            multi = 1.5;
+        }
+
+        const win = Math.floor(bet * multi);
+        await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: win - bet } }, { upsert: true });
+
+        const embed = new EmbedBuilder()
+            .setTitle('🎰 SLOT MACHINE')
+            .setDescription(`\n　**[ ${res.join(' | ')} ]**\n`)
+            .addFields(
+                { name: 'BET', value: `${formatCoin(bet)} 💰`, inline: true },
+                { name: 'WIN', value: `${formatCoin(win)} 💰`, inline: true }
+            )
+            .setColor(multi > 0 ? 'Gold' : 'Grey');
+
+        return interaction.reply({ embeds: [embed] });
+    }
+};
