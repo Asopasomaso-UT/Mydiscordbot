@@ -1,7 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const mongoose = require('mongoose');
 const DataModel = mongoose.models.QuickData;
-const { parseCoin, formatCoin } = require('../utils/formatHelper');
+const { formatCoin, parseCoin } = require('../utils/formatHelper');
 const { EVOLUTION_STAGES } = require('../utils/Pet-data');
 
 const SUITS = ['♠️', '♥️', '♦️', '♣️'];
@@ -10,17 +10,19 @@ const VALUES = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('poker')
-        .setDescription('ポーカーで勝負します')
-        .addStringOption(option => option.setName('bet').setDescription('賭け金').setRequired(true)),
+        .setDescription('ビデオポーカーで勝負します')
+        .addStringOption(option => option.setName('bet').setDescription('賭け金 (例: 1m, 10b)').setRequired(true)),
 
     async execute(interaction) {
         const userId = interaction.user.id;
         const guildId = interaction.guild.id;
         const bet = parseCoin(interaction.options.getString('bet'));
-        const moneyKey = `money_${guildId}_${userId}`;
 
+        if (isNaN(bet) || bet < 100) return interaction.reply({ content: '有効な賭け金を100以上で入力してください。', ephemeral: true });
+
+        const moneyKey = `money_${guildId}_${userId}`;
         const userData = await DataModel.findOne({ id: moneyKey });
-        if ((userData?.value || 0) < bet) return interaction.reply({ content: 'コイン不足です', ephemeral: true });
+        if ((userData?.value || 0) < bet) return interaction.reply({ content: 'コインが足りません！', ephemeral: true });
 
         let deck = [];
         SUITS.forEach(s => VALUES.forEach(v => deck.push({ s, v })));
@@ -29,11 +31,11 @@ module.exports = {
 
         const getEmbed = (h, s) => {
             const cards = h.map((c, i) => `${s.has(i) ? '✅' : '　'}\` ${c.s}${c.v} \``).join('\n');
-            return new EmbedBuilder().setTitle('🃏 VIDEO POKER').setDescription(`交換するカードを選んでください\n\n${cards}`).setColor('Blue');
+            return new EmbedBuilder().setTitle('🃏 VIDEO POKER').setDescription(`交換するカードを選択して「決定」を押してください。\n\n${cards}`).setColor('Blue');
         };
 
         const row = new ActionRowBuilder().addComponents([0,1,2,3,4].map(i => new ButtonBuilder().setCustomId(`c_${i}`).setLabel(`${i+1}`).setStyle(ButtonStyle.Secondary)));
-        const confirm = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ok').setLabel('決定').setStyle(ButtonStyle.Primary));
+        const confirm = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('ok').setLabel('決定して交換').setStyle(ButtonStyle.Primary));
 
         const msg = await interaction.reply({ embeds: [getEmbed(hand, new Set())], components: [row, confirm], fetchReply: true });
         const selected = new Set();
@@ -51,45 +53,59 @@ module.exports = {
         collector.on('end', async () => {
             selected.forEach(i => hand[i] = deck.splice(0, 1)[0]);
 
-            // --- 統合倍率計算 ---
+            // --- じゃんけんと同じ方式の倍率計算 ---
             const petData = await DataModel.findOne({ id: `pet_data_${guildId}_${userId}` });
-            let petBoost = 1.0;
+            let totalMultiplier = 0;
+            const pets = petData?.value?.pets || [];
             const equippedIds = (petData?.value?.equippedPetIds || []).map(id => String(id));
-            const equippedPets = (petData?.value?.pets || []).filter(p => equippedIds.includes(String(p.petId)));
+            const equippedPets = pets.filter(p => equippedIds.includes(String(p.petId)));
 
             equippedPets.forEach(p => {
-                const base = Number(p.multiplier || 1.0);
-                const evo = Number(EVOLUTION_STAGES[p.evoLevel || 0].multiplier || 1.0);
-                let enchant = 0;
+                const basePart = Number(p.multiplier || 1) * Number(EVOLUTION_STAGES[p.evoLevel || 0].multiplier || 1);
+                let enchantFactor = 1.0;
                 if (p.enchant) {
-                    const lv = p.enchant.level || 0;
-                    if (p.enchant.type === 'power') enchant += (lv * 0.2);
-                    if (p.enchant.type === 'mimic') enchant += (lv * 1.0);
+                    const type = String(p.enchant.type).toLowerCase();
+                    const lv = Number(p.enchant.level || 0);
+                    if (type === 'power') enchantFactor += (lv * 0.2);
+                    else if (type === 'mimic') enchantFactor += lv;
                 }
-                petBoost += (base * evo - 1.0) + enchant;
+                totalMultiplier += (basePart * enchantFactor);
             });
+            if (totalMultiplier < 1) totalMultiplier = 1.0;
 
             // 役判定
             const counts = {};
             hand.forEach(c => counts[c.v] = (counts[c.v] || 0) + 1);
-            const p = Object.values(counts).filter(v => v === 2).length;
-            const t = Object.values(counts).some(v => v === 3);
-            const f = Object.values(counts).some(v => v === 4);
+            const pairs = Object.values(counts).filter(v => v === 2).length;
+            const three = Object.values(counts).some(v => v === 3);
+            const four = Object.values(counts).some(v => v === 4);
 
-            let multi = 0, rank = "ブタ";
-            if (f) { multi = 10; rank = "フォーカード"; }
-            else if (t && p === 1) { multi = 7; rank = "フルハウス"; }
-            else if (t) { multi = 3; rank = "スリーカード"; }
-            else if (p === 2) { multi = 2; rank = "ツーペア"; }
-            else if (p === 1) { multi = 1; rank = "ワンペア"; }
+            let multi = 0, rank = "ノーペア";
+            if (four) { multi = 10; rank = "フォーカード"; }
+            else if (three && pairs === 1) { multi = 7; rank = "フルハウス"; }
+            else if (three) { multi = 3; rank = "スリーカード"; }
+            else if (pairs === 2) { multi = 2; rank = "ツーペア"; }
+            else if (pairs === 1) { multi = 1; rank = "ワンペア"; }
 
-            const win = Math.floor(bet * multi * petBoost);
-            await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: (multi > 0 ? win - bet : -bet) } });
+            const win = Math.floor(bet * multi * totalMultiplier);
+            const changeAmount = (multi > 0) ? (win - bet) : -bet;
+
+            const updatedRecord = await DataModel.findOneAndUpdate(
+                { id: moneyKey },
+                { $inc: { value: changeAmount } },
+                { upsert: true, returnDocument: 'after' }
+            );
 
             const endEmbed = new EmbedBuilder()
                 .setTitle(`🃏 結果: ${rank}`)
-                .setDescription(`${hand.map(c => `\` ${c.s}${c.v} \``).join(' ')}\n\n配当: **${formatCoin(win)}** 💰\nブースト: **x${petBoost.toFixed(2)}**`)
-                .setColor(multi > 0 ? 'Green' : 'Red');
+                .setColor(multi > 0 ? 'Green' : 'Red')
+                .setDescription([
+                    hand.map(c => `\` ${c.s}${c.v} \``).join(' '),
+                    `━━━━━━━━━━━━━━`,
+                    `ペット合計倍率: **x${totalMultiplier.toFixed(2)}**`,
+                    `配当: **${formatCoin(win)}** 💰`,
+                    `現在の残高: **${formatCoin(updatedRecord.value || 0)}** 💰`
+                ].join('\n'));
 
             await interaction.editReply({ embeds: [endEmbed], components: [] });
         });
