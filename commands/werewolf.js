@@ -4,7 +4,6 @@ const {
 } = require('discord.js');
 const mongoose = require('mongoose');
 
-// サーバーごとのゲーム進行状態を管理
 const activeGames = new Map();
 
 module.exports = {
@@ -15,7 +14,6 @@ module.exports = {
     async execute(interaction) {
         const guildId = interaction.guild.id;
 
-        // --- パネル呼び戻し処理 ---
         if (activeGames.has(guildId)) {
             const game = activeGames.get(guildId);
             if (game.lastMessage) await game.lastMessage.delete().catch(() => {});
@@ -29,7 +27,6 @@ module.exports = {
             return;
         }
 
-        // --- 新規ゲーム初期化 ---
         const gameState = {
             host: interaction.user.id,
             players: new Map(),
@@ -45,35 +42,25 @@ module.exports = {
         const updateRecruitPanel = () => {
             const pList = Array.from(gameState.players.values()).map((p, i) => `${i + 1}. ${p.user.username}`).join('\n') || 'なし';
             const conf = gameState.config;
-            const hasRole = (r) => conf.roles.includes(r) ? '✅' : '❌';
+            const roleLabels = { fortune: '🔮 占い師', hunter: '🛡️ 狩人', medium: '🔮 霊媒師', madman: '🤡 狂人' };
+            const activeRolesText = conf.roles.length > 0 ? conf.roles.map(r => roleLabels[r]).join('\n') : 'なし';
 
             gameState.currentEmbeds = [new EmbedBuilder()
                 .setTitle('🐺 人狼ゲーム：募集パネル')
                 .setColor('DarkRed')
                 .addFields(
                     { name: `参加者 (${gameState.players.size}人)`, value: pList, inline: true },
-                    { name: '役職構成', value: [
-                        `🐺 人狼: ${conf.wolfCount}名`,
-                        `🔮 占い師: ${hasRole('fortune')}`,
-                        `🛡️ 狩人: ${hasRole('hunter')}`,
-                        `🔮 霊媒師: ${hasRole('medium')}`,
-                        `🤡 狂人: ${hasRole('madman')}`,
-                        `👨 市民: 残り全員`
-                    ].join('\n'), inline: true }
-                )
-                .setFooter({ text: '埋もれたら /werewolf で呼び戻せます' })];
+                    { name: '役職構成', value: `🐺 人狼: ${conf.wolfCount}名\n${activeRolesText}`, inline: true }
+                )];
 
             gameState.currentComponents = [
                 new ActionRowBuilder().addComponents(
                     new ButtonBuilder().setCustomId('join_toggle').setLabel('参加 / 抜ける').setStyle(ButtonStyle.Primary),
                     new ButtonBuilder().setCustomId('start').setLabel('開始').setStyle(ButtonStyle.Danger),
-                    new ButtonBuilder().setCustomId('stop_game').setLabel('強制終了').setStyle(ButtonStyle.Secondary)
+                    new ButtonBuilder().setCustomId('stop_game').setLabel('終了').setStyle(ButtonStyle.Secondary)
                 ),
                 new ActionRowBuilder().addComponents(
-                    new StringSelectMenuBuilder()
-                        .setCustomId('select_roles')
-                        .setPlaceholder('追加する役職を選択')
-                        .setMinValues(0).setMaxValues(4)
+                    new StringSelectMenuBuilder().setCustomId('select_roles').setPlaceholder('追加役職を選択').setMinValues(0).setMaxValues(4)
                         .addOptions([
                             { label: '占い師', value: 'fortune', default: conf.roles.includes('fortune') },
                             { label: '狩人', value: 'hunter', default: conf.roles.includes('hunter') },
@@ -82,14 +69,11 @@ module.exports = {
                         ])
                 ),
                 new ActionRowBuilder().addComponents(
-                    new StringSelectMenuBuilder()
-                        .setCustomId('select_wolf')
-                        .setPlaceholder('人狼の数を選択')
-                        .addOptions([
-                            { label: '人狼 1名', value: '1', default: conf.wolfCount === 1 },
-                            { label: '人狼 2名', value: '2', default: conf.wolfCount === 2 },
-                            { label: '人狼 3名', value: '3', default: conf.wolfCount === 3 },
-                        ])
+                    new StringSelectMenuBuilder().setCustomId('select_wolf').setPlaceholder('人狼数').addOptions([
+                        { label: '人狼 1名', value: '1', default: conf.wolfCount === 1 },
+                        { label: '人狼 2名', value: '2', default: conf.wolfCount === 2 },
+                        { label: '人狼 3名', value: '3', default: conf.wolfCount === 3 },
+                    ])
                 )
             ];
         };
@@ -99,25 +83,22 @@ module.exports = {
         gameState.lastMessage = response;
 
         const collector = response.createMessageComponentCollector({ time: 3600000 });
-
         collector.on('collect', async i => {
             await i.deferUpdate().catch(() => {});
             if (i.customId === 'join_toggle') {
                 if (gameState.players.has(i.user.id)) gameState.players.delete(i.user.id);
                 else gameState.players.set(i.user.id, { user: i.user, role: null, alive: true });
-            } else {
-                if (i.user.id !== gameState.host) return;
+            } else if (i.user.id === gameState.host) {
                 if (i.customId === 'stop_game') {
                     activeGames.delete(guildId);
                     return i.editReply({ content: '🛑 終了しました。', embeds: [], components: [] });
                 }
-                switch (i.customId) {
-                    case 'select_roles': gameState.config.roles = i.values; break;
-                    case 'select_wolf': gameState.config.wolfCount = parseInt(i.values[0]); break;
-                    case 'start':
-                        if (gameState.players.size < 4) return i.followUp({ content: '⚠ 4人以上必要です。', ephemeral: true });
-                        collector.stop();
-                        return runMainLoop(interaction, gameState);
+                if (i.customId === 'select_roles') gameState.config.roles = i.values;
+                if (i.customId === 'select_wolf') gameState.config.wolfCount = parseInt(i.values[0]);
+                if (i.customId === 'start') {
+                    if (gameState.players.size < 4) return i.followUp({ content: '⚠ 4人以上必要です。', ephemeral: true });
+                    collector.stop();
+                    return runMainLoop(interaction, gameState);
                 }
             }
             updateRecruitPanel();
@@ -129,34 +110,29 @@ module.exports = {
 async function runMainLoop(interaction, gameState) {
     const channel = interaction.channel;
     const players = Array.from(gameState.players.values());
-    const conf = gameState.config;
     
+    // 役職配布
     let pool = [];
-    for(let i=0; i<conf.wolfCount; i++) pool.push('wolf');
-    conf.roles.forEach(r => pool.push(r));
+    for(let i=0; i<gameState.config.wolfCount; i++) pool.push('wolf');
+    gameState.config.roles.forEach(r => pool.push(r));
     while(pool.length < players.length) pool.push('villager');
     pool.sort(() => Math.random() - 0.5);
-
     players.forEach((p, i) => {
         p.role = pool[i];
-        const rName = {wolf:'人狼',fortune:'占い師',hunter:'狩人',medium:'霊媒師',madman:'狂人',villager:'市民'};
-        p.user.send(`【人狼】あなたの役職は **${rName[p.role]}** です。`).catch(() => {});
+        p.user.send(`あなたの役職は **${p.role}** です。`).catch(() => {});
     });
 
     await interaction.editReply({ content: '🚀 ゲーム開始！', embeds: [], components: [] });
 
     while (activeGames.has(channel.guild.id)) {
-        // --- 夜 ---
+        // --- 夜フェーズ ---
         await setChatPermission(channel, false);
         const nightActions = { kill: null, check: null, guard: null, done: new Set() };
         const activeRoles = players.filter(p => p.alive && ['wolf', 'fortune', 'hunter'].includes(p.role));
 
         const updateNightState = () => {
-            const status = activeRoles.map(p => {
-                const rName = {wolf:'人狼',fortune:'占い師',hunter:'狩人'}[p.role];
-                return `${rName}: ${nightActions.done.has(p.user.id) ? '✅ 完了' : '💤 待機中'}`;
-            }).join('\n') || 'アクションが必要な生存役職はいません。';
-            gameState.currentEmbeds = [new EmbedBuilder().setTitle(`🌙 第 ${gameState.dayCount} 夜`).setColor('Blue').setDescription(`役職者はDMで行動してください。\n\n**進行状況:**\n${status}`)];
+            const status = activeRoles.map(p => `${p.role}: ${nightActions.done.has(p.user.id) ? '✅' : '💤'}`).join('\n') || '待機なし';
+            gameState.currentEmbeds = [new EmbedBuilder().setTitle(`🌙 第 ${gameState.dayCount} 夜`).setColor('Blue').setDescription(`進行状況:\n${status}`)];
             gameState.currentComponents = [new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('to_day').setLabel('朝にする').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId('stop_game').setLabel('強制終了').setStyle(ButtonStyle.Secondary)
@@ -167,22 +143,33 @@ async function runMainLoop(interaction, gameState) {
         gameState.lastMessage = await channel.send({ embeds: gameState.currentEmbeds, components: gameState.currentComponents });
         activeRoles.forEach(p => handleNightDM(p, gameState, nightActions, updateNightState));
 
-        const nI = await gameState.lastMessage.awaitMessageComponent({ filter: i => i.user.id === gameState.host, time: 3600000 }).catch(() => null);
+        const nI = await gameState.lastMessage.awaitMessageComponent({ filter: i => i.user.id === gameState.host }).catch(() => null);
         if (!nI || nI.customId === 'stop_game') break;
 
-        // --- 昼 ---
+        // --- 朝・話し合いフェーズ ---
         await setChatPermission(channel, true);
         let victim = (nightActions.kill && nightActions.kill !== nightActions.guard) ? gameState.players.get(nightActions.kill) : null;
         if (victim) victim.alive = false;
 
-        await channel.send({ embeds: [new EmbedBuilder().setTitle(`☀️ 第 ${gameState.dayCount} 日`).setColor('Orange').setDescription(victim ? `昨晩、 **${victim.user.username}** が無残な姿で発見されました。` : '昨晩、犠牲者は誰もいませんでした！')] });
+        await channel.send({ embeds: [new EmbedBuilder().setTitle(`☀️ 第 ${gameState.dayCount} 日`).setColor('Orange').setDescription(victim ? `昨晩、 **${victim.user.username}** が犠牲になりました。` : '昨晩、犠牲者は誰もいませんでした！')] });
 
-        // --- 投票 ---
+        // ホストが「投票へ進む」を押すまで待機
+        gameState.currentEmbeds = [new EmbedBuilder().setTitle('💬 話し合い中').setDescription('話し合いが終わったら、ホストは下のボタンを押して投票に進んでください。').setColor('Yellow')];
+        gameState.currentComponents = [new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('go_vote').setLabel('投票を開始する').setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('stop_game').setLabel('強制終了').setStyle(ButtonStyle.Secondary)
+        )];
+        gameState.lastMessage = await channel.send({ embeds: gameState.currentEmbeds, components: gameState.currentComponents });
+        
+        const talkI = await gameState.lastMessage.awaitMessageComponent({ filter: i => i.user.id === gameState.host }).catch(() => null);
+        if (!talkI || talkI.customId === 'stop_game') break;
+
+        // --- 投票フェーズ ---
         const votes = new Map();
         const aliveOnes = players.filter(p => p.alive);
         const updateVoteState = () => {
-            const list = aliveOnes.map(p => `${p.user.username} ${votes.has(p.user.id) ? '✅ 完了' : '　'}`).join('\n');
-            gameState.currentEmbeds = [new EmbedBuilder().setTitle('🗳️ 追放投票').setColor('Red').setDescription(`**生存者のみ**ボタンからDMで投票してください。\n\n${list}`)];
+            const list = aliveOnes.map(p => `${p.user.username} ${votes.has(p.user.id) ? '✅' : '　'}`).join('\n');
+            gameState.currentEmbeds = [new EmbedBuilder().setTitle('🗳️ 追放投票').setColor('Red').setDescription(`生存者はボタンからDMで投票してください。\n\n${list}`)];
             gameState.currentComponents = [new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_vote').setLabel('投票する').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId('btn_skip').setLabel('投票スキップ').setStyle(ButtonStyle.Success),
@@ -191,7 +178,7 @@ async function runMainLoop(interaction, gameState) {
         };
 
         updateVoteState();
-        gameState.lastMessage = await channel.send({ embeds: gameState.currentEmbeds, components: gameState.currentComponents });
+        await talkI.update({ embeds: gameState.currentEmbeds, components: gameState.currentComponents });
 
         const vColl = gameState.lastMessage.createMessageComponentCollector({ time: 600000 });
         let vResult = 'normal';
@@ -199,13 +186,12 @@ async function runMainLoop(interaction, gameState) {
         const voteFinished = new Promise(resolve => {
             const listener = async (mi) => {
                 if (mi.customId !== 'do_vote') return;
-                // 投票入力時の生存チェック（念のため）
                 const voter = gameState.players.get(mi.user.id);
-                if (!voter || !voter.alive) return mi.reply({ content: '幽霊は投票に介入できません。', ephemeral: true });
+                if (!voter || !voter.alive) return mi.reply({ content: '幽霊は投票できません。', ephemeral: true });
 
                 await mi.deferUpdate().catch(() => {});
                 votes.set(mi.user.id, mi.values[0]);
-                await mi.editReply({ content: '投票を受け付けました。', components: [] });
+                await mi.editReply({ content: '投票完了', components: [] });
                 updateVoteState();
                 await gameState.lastMessage.edit({ embeds: gameState.currentEmbeds }).catch(() => {});
                 if (votes.size >= aliveOnes.length) resolve('done');
@@ -215,16 +201,12 @@ async function runMainLoop(interaction, gameState) {
 
         vColl.on('collect', async i => {
             if (i.customId === 'btn_vote') {
-                // 修正ポイント：ボタンを押した人が生きているかチェック
                 const voter = gameState.players.get(i.user.id);
-                if (!voter || !voter.alive) {
-                    return i.reply({ content: '💀 あなたは死んでいるため、投票できません。', ephemeral: true });
-                }
-
+                if (!voter || !voter.alive) return i.reply({ content: 'あなたは死んでいるため投票できません。', ephemeral: true });
                 const targets = aliveOnes.filter(t => t.user.id !== i.user.id);
                 const sel = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('do_vote').addOptions(targets.map(t => ({ label: t.user.username, value: t.user.id }))));
-                await i.user.send({ content: '追放する人を選んでください（生存者のみ）：', components: [sel] }).catch(() => {});
-                await i.reply({ content: 'DMに投票用紙を送りました。', ephemeral: true });
+                await i.user.send({ content: '投票先を選択:', components: [sel] }).catch(() => {});
+                await i.reply({ content: 'DMを確認してください。', ephemeral: true });
             } else if (i.user.id === gameState.host) {
                 vResult = i.customId === 'btn_skip' ? 'skipped' : 'stopped';
                 vColl.stop();
@@ -245,8 +227,11 @@ async function runMainLoop(interaction, gameState) {
                 gameState.lastExiled = exiled;
                 await channel.send(`🗳️ 投票の結果、 **${exiled.user.username}** が追放されました。`);
             }
+        } else {
+            await channel.send('⏩ 投票がスキップされました。');
         }
 
+        // 勝利判定
         const nowAlive = players.filter(p => p.alive);
         const wCount = nowAlive.filter(p => p.role === 'wolf').length;
         if (wCount === 0 || wCount >= (nowAlive.length - wCount)) {
@@ -259,9 +244,9 @@ async function runMainLoop(interaction, gameState) {
             break;
         }
 
-        gameState.currentEmbeds = [new EmbedBuilder().setTitle('話し合い').setDescription('準備ができたら次へ進んでください。').setColor('Yellow')];
+        gameState.currentEmbeds = [new EmbedBuilder().setTitle('🌙 夜への準備').setDescription('準備ができたら次へ進んでください。').setColor('Grey')];
         gameState.currentComponents = [new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('go_night').setLabel('次へ進む').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('go_night').setLabel('次の夜へ進む').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('stop_game').setLabel('強制終了').setStyle(ButtonStyle.Secondary)
         )];
         gameState.lastMessage = await channel.send({ embeds: gameState.currentEmbeds, components: gameState.currentComponents });
@@ -273,7 +258,6 @@ async function runMainLoop(interaction, gameState) {
     await setChatPermission(channel, true);
 }
 
-// ヘルパー関数
 async function handleNightDM(player, gs, acts, updateFn) {
     const targets = Array.from(gs.players.values()).filter(p => p.alive && (player.role==='wolf' ? p.role!=='wolf' : (player.role==='fortune' ? p.user.id!==player.user.id : true)));
     const sel = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('night_act').addOptions(targets.map(t => ({ label: t.user.username, value: t.user.id }))));
@@ -287,7 +271,7 @@ async function handleNightDM(player, gs, acts, updateFn) {
         if (player.role === 'fortune') {
             const res = gs.players.get(i.values[0]).role === 'wolf' ? '人狼' : '人間';
             await i.editReply({ content: `${gs.players.get(i.values[0]).user.username} は **${res}** です。`, components: [] });
-        } else await i.editReply({ content: '完了しました。', components: [] });
+        } else await i.editReply({ content: '完了', components: [] });
         acts.done.add(player.user.id);
         updateFn();
         if (gs.lastMessage) await gs.lastMessage.edit({ embeds: gs.currentEmbeds }).catch(() => {});
@@ -295,21 +279,14 @@ async function handleNightDM(player, gs, acts, updateFn) {
 }
 
 async function giveReward(interaction, player, total) {
-    const DataModel = mongoose.models.QuickData;
-    const { formatCoin } = require('../utils/formatHelper');
-    const { EVOLUTION_STAGES } = require('../utils/Pet-data');
-    const bet = 1000;
-    const petData = await DataModel.findOne({ id: `pet_data_${interaction.guild.id}_${player.user.id}` });
-    let multi = 1.0;
-    const equipped = (petData?.value?.pets || []).filter(p => (petData?.value?.equippedPetIds || []).map(id=>String(id)).includes(String(p.petId)));
-    equipped.forEach(p => {
-        const base = (p.multiplier || 1) * (EVOLUTION_STAGES[p.evoLevel || 0].multiplier || 1);
-        multi += (base * (p.enchant?.type === 'power' ? 1 + (p.enchant.level * 0.2) : 1) - 1);
-    });
-    const finalMulti = ((player.role==='wolf'||player.role==='fortune')?2.5:1.5) + multi + (total * 0.2);
-    const amount = Math.floor(bet * finalMulti);
-    await DataModel.findOneAndUpdate({ id: `money_${interaction.guild.id}_${player.user.id}` }, { $inc: { value: amount } }, { upsert: true });
-    await interaction.channel.send(`💰 **${player.user.username}** 報酬: **${formatCoin(amount)}** (x${finalMulti.toFixed(1)})`);
+    try {
+        const DataModel = mongoose.models.QuickData;
+        const bet = 1000;
+        const finalMulti = ((player.role==='wolf'||player.role==='fortune')?2.5:1.5) + (total * 0.1);
+        const amount = Math.floor(bet * finalMulti);
+        await DataModel.findOneAndUpdate({ id: `money_${interaction.guild.id}_${player.user.id}` }, { $inc: { value: amount } }, { upsert: true });
+        await interaction.channel.send(`💰 **${player.user.username}** 報酬: **${amount}** コイン`);
+    } catch(e) {}
 }
 
 async function setChatPermission(channel, can) {
