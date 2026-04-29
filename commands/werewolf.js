@@ -19,7 +19,7 @@ module.exports = {
         if (activeGames.has(guildId)) {
             const game = activeGames.get(guildId);
 
-            // 古いパネルを削除（エラー回避のためcatch）
+            // 古いパネルを削除
             if (game.lastMessage) {
                 await game.lastMessage.delete().catch(() => {});
             }
@@ -50,7 +50,6 @@ module.exports = {
         };
         activeGames.set(guildId, gameState);
 
-        // 募集パネルの生成関数
         const updateRecruitPanel = () => {
             const pList = Array.from(gameState.players.values()).map((p, i) => `${i + 1}. ${p.user.username}`).join('\n') || 'なし';
             const conf = gameState.config;
@@ -90,7 +89,6 @@ module.exports = {
         const collector = response.createMessageComponentCollector({ time: 3600000 });
 
         collector.on('collect', async i => {
-            // ホスト専用操作のチェック
             const hostOnlyIds = ['t_wolf', 't_fortune', 't_hunter', 't_medium', 't_madman', 'start', 'stop_game'];
             if (hostOnlyIds.includes(i.customId) && i.user.id !== gameState.host) {
                 return i.reply({ content: 'ホストのみ操作可能です。', ephemeral: true });
@@ -99,7 +97,7 @@ module.exports = {
             if (i.customId === 'stop_game') {
                 activeGames.delete(guildId);
                 await setChatPermission(interaction.channel, true);
-                return i.update({ content: '🛑 ゲームを終了しました。', embeds: [], components: [] });
+                return i.update({ content: '🛑 終了しました。', embeds: [], components: [] });
             }
 
             switch (i.customId) {
@@ -125,7 +123,6 @@ async function runMainLoop(interaction, gameState) {
     const channel = interaction.channel;
     const players = Array.from(gameState.players.values());
     
-    // --- 役職配布 ---
     let pool = [];
     for(let i=0; i<gameState.config.wolfCount; i++) pool.push('wolf');
     if(gameState.config.hasFortune) pool.push('fortune');
@@ -167,15 +164,11 @@ async function runMainLoop(interaction, gameState) {
 
         activeRoles.forEach(p => handleNightDM(p, gameState, nightActions, updateNightState));
 
-        // 霊媒
-        if (gameState.config.hasMedium && gameState.lastExiled) {
-            const m = players.find(p => p.role === 'medium' && p.alive);
-            if(m) m.user.send(`🔮 霊媒結果: ${gameState.lastExiled.user.username} は **${gameState.lastExiled.role === 'wolf'?'人狼':'人間'}** でした。`).catch(()=>{});
-        }
-
-        // ホストの進行待ち
         const nI = await gameState.lastMessage.awaitMessageComponent({ filter: i => i.user.id === gameState.host, time: 3600000 }).catch(() => null);
-        if (!nI || nI.customId === 'stop_game_night') break; 
+        if (!nI || nI.customId === 'stop_game_night') {
+            activeGames.delete(channel.guild.id);
+            break;
+        }
 
         // --- 2. 昼フェーズ ---
         await setChatPermission(channel, true);
@@ -189,9 +182,10 @@ async function runMainLoop(interaction, gameState) {
         const aliveOnes = players.filter(p => p.alive);
         const updateVoteState = () => {
             const list = aliveOnes.map(p => `${p.user.username} ${votes.has(p.user.id) ? '✅ 完了' : '　'}`).join('\n');
-            gameState.currentEmbeds = [new EmbedBuilder().setTitle('🗳️ 追放投票').setColor('Red').setDescription(`ボタンを押してDMで投票してください。\n\n${list}`)];
+            gameState.currentEmbeds = [new EmbedBuilder().setTitle('🗳️ 追放投票').setColor('Red').setDescription(`ボタンを押してDMで投票してください。\nスキップは平和村（追放なし）になります。\n\n${list}`)];
             gameState.currentComponents = [new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('btn_vote').setLabel('投票する').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId('btn_skip').setLabel('投票スキップ').setStyle(ButtonStyle.Success),
                 new ButtonBuilder().setCustomId('stop_game_vote').setLabel('強制終了').setStyle(ButtonStyle.Secondary)
             )];
         };
@@ -200,13 +194,19 @@ async function runMainLoop(interaction, gameState) {
         gameState.lastMessage = await channel.send({ embeds: gameState.currentEmbeds, components: gameState.currentComponents });
 
         const vColl = gameState.lastMessage.createMessageComponentCollector({ time: 600000 });
+        
+        let vResult = 'normal';
         const voteFinished = new Promise(resolve => {
             const listener = async (mi) => {
                 if (mi.customId !== 'do_vote') return;
+                await mi.deferUpdate().catch(() => {}); // 失敗対策
+
                 votes.set(mi.user.id, mi.values[0]);
-                await mi.update({ content: '投票完了。', components: [] });
+                await mi.editReply({ content: '投票を受け付けました。', components: [] });
+                
                 updateVoteState();
-                await gameState.lastMessage.edit({ embeds: gameState.currentEmbeds });
+                await gameState.lastMessage.edit({ embeds: gameState.currentEmbeds }).catch(() => {});
+                
                 if (votes.size >= aliveOnes.length) {
                     channel.client.removeListener('interactionCreate', listener);
                     resolve('done');
@@ -219,25 +219,41 @@ async function runMainLoop(interaction, gameState) {
             if (i.customId === 'btn_vote') {
                 const targets = aliveOnes.filter(t => t.user.id !== i.user.id);
                 const sel = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('do_vote').addOptions(targets.map(t => ({ label: t.user.username, value: t.user.id }))));
-                await i.user.send({ content: '投票先:', components: [sel] }).catch(() => {});
+                await i.user.send({ content: '投票先を選んでください：', components: [sel] }).catch(() => {});
                 await i.reply({ content: 'DMに投票用紙を送りました。', ephemeral: true });
+            } 
+            else if (i.customId === 'btn_skip') {
+                if (i.user.id !== gameState.host) return i.reply({ content: 'ホストのみスキップ可能です。', ephemeral: true });
+                vResult = 'skipped';
+                vColl.stop();
             }
-            if (i.customId === 'stop_game_vote') { vColl.stop(); activeGames.delete(channel.guild.id); }
+            else if (i.customId === 'stop_game_vote') {
+                vResult = 'stopped';
+                vColl.stop();
+            }
         });
 
-        const vRes = await Promise.race([voteFinished, new Promise(r => setTimeout(()=>r('timeout'), 600000))]);
-        vColl.stop();
-        if (!activeGames.has(channel.guild.id)) break;
+        await Promise.race([voteFinished, new Promise(r => vColl.on('end', () => r()))]);
+        channel.client.removeAllListeners('interactionCreate');
 
-        // 追放
-        const counts = {};
-        votes.forEach(v => counts[v] = (counts[v] || 0) + 1);
-        const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]);
-        if (sorted[0]) {
-            const exiled = gameState.players.get(sorted[0][0]);
-            exiled.alive = false;
-            gameState.lastExiled = exiled;
-            await channel.send(`🗳️ 投票の結果、 **${exiled.user.username}** が追放されました。`);
+        if (vResult === 'stopped') {
+            activeGames.delete(channel.guild.id);
+            break;
+        }
+
+        if (vResult !== 'skipped') {
+            const counts = {};
+            votes.forEach(v => counts[v] = (counts[v] || 0) + 1);
+            const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+            if (sorted[0]) {
+                const exiled = gameState.players.get(sorted[0][0]);
+                exiled.alive = false;
+                gameState.lastExiled = exiled;
+                await channel.send(`🗳️ 投票の結果、 **${exiled.user.username}** が追放されました。`);
+            }
+        } else {
+            gameState.lastExiled = null;
+            await channel.send('⏩ ホストにより投票がスキップされました。誰も追放されません。');
         }
 
         // 勝利判定
@@ -253,17 +269,19 @@ async function runMainLoop(interaction, gameState) {
             break;
         }
 
-        gameState.currentEmbeds = [new EmbedBuilder().setTitle('話し合い中').setDescription('話し合いが終わったら次の夜へ進んでください。').setColor('Yellow')];
+        gameState.currentEmbeds = [new EmbedBuilder().setTitle('話し合い中').setDescription('次の夜へ進む場合はボタンを押してください。').setColor('Yellow')];
         gameState.currentComponents = [new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('go_night').setLabel('次へ進む').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('stop_game_talk').setLabel('強制終了').setStyle(ButtonStyle.Secondary)
         )];
         gameState.lastMessage = await channel.send({ embeds: gameState.currentEmbeds, components: gameState.currentComponents });
         const nextI = await gameState.lastMessage.awaitMessageComponent({ filter: i => i.user.id === gameState.host });
-        if (nextI.customId.startsWith('stop')) break;
+        if (nextI.customId.startsWith('stop')) {
+            activeGames.delete(channel.guild.id);
+            break;
+        }
         gameState.dayCount++;
     }
-    activeGames.delete(channel.guild.id);
     await setChatPermission(channel, true);
 }
 
@@ -274,15 +292,16 @@ async function handleNightDM(player, gs, acts, updateFn) {
     if (!m) return;
     const i = await m.awaitMessageComponent({ time: 300000 }).catch(() => null);
     if (i) {
+        await i.deferUpdate().catch(() => {});
         if (player.role === 'wolf') acts.kill = i.values[0];
         if (player.role === 'hunter') acts.guard = i.values[0];
         if (player.role === 'fortune') {
             const res = gs.players.get(i.values[0]).role === 'wolf' ? '人狼' : '人間';
-            await i.update({ content: `${gs.players.get(i.values[0]).user.username} は **${res}** です。`, components: [] });
-        } else await i.update({ content: '完了しました。', components: [] });
+            await i.editReply({ content: `${gs.players.get(i.values[0]).user.username} は **${res}** です。`, components: [] });
+        } else await i.editReply({ content: '完了しました。', components: [] });
         acts.done.add(player.user.id);
         updateFn();
-        await gs.lastMessage.edit({ embeds: gs.currentEmbeds });
+        if (gs.lastMessage) await gs.lastMessage.edit({ embeds: gs.currentEmbeds }).catch(() => {});
     }
 }
 
