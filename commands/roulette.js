@@ -6,7 +6,7 @@ const { EVOLUTION_STAGES } = require('../utils/Pet-data');
 
 const RED = '🔴';
 const BLACK = '⚫';
-const GREEN = '🟢'; // 0の枠（カジノの取り分）
+const GREEN = '🟢';
 
 module.exports = {
     data: new SlashCommandBuilder()
@@ -25,10 +25,10 @@ module.exports = {
         if (isNaN(bet) || bet < 100) return interaction.reply({ content: '有効な賭け金を100以上で入力してください。', ephemeral: true });
 
         const moneyKey = `money_${guildId}_${userId}`;
+        const totalEarnedKey = `total_earned_${guildId}_${userId}`; //[cite: 5]
         const userData = await DataModel.findOne({ id: moneyKey });
         if ((userData?.value || 0) < bet) return interaction.reply({ content: 'コインが足りません！', ephemeral: true });
 
-        // --- ペット倍率計算（じゃんけん方式） ---
         const petData = await DataModel.findOne({ id: `pet_data_${guildId}_${userId}` });
         let totalMultiplier = 0;
         const pets = petData?.value?.pets || [];
@@ -48,10 +48,9 @@ module.exports = {
         });
         if (totalMultiplier < 1) totalMultiplier = 1.0;
 
-        // 初期Embedとボタン
         const embed = new EmbedBuilder()
             .setTitle('🎡 ROULETTE')
-            .setDescription(`賭け金: **${formatCoin(bet)}** 💰\n赤(x2)か黒(x2)を選んでください！\n\n${RED}${BLACK}${RED}${BLACK}${RED}${BLACK}${RED}${BLACK}`)
+            .setDescription(`賭け金: **${formatCoin(bet)}** 💰\n赤(x2)か黒(x2)を選んでください！`)
             .setColor('Blurple');
 
         const row = new ActionRowBuilder().addComponents(
@@ -60,7 +59,6 @@ module.exports = {
         );
 
         const msg = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
-
         const collector = msg.createMessageComponentCollector({ time: 30000 });
 
         collector.on('collect', async i => {
@@ -72,34 +70,21 @@ module.exports = {
             if (reason === 'time') return interaction.editReply({ content: 'タイムアウトしました。', components: [] });
 
             const userChoice = reason === 'bet_red' ? RED : BLACK;
-            
-            // アニメーション演出（3回更新して回っているように見せる）
-            const frames = [
-                `${BLACK}${RED}${BLACK}${RED}${BLACK}${RED}${BLACK}${RED}`,
-                `${RED}${BLACK}${RED}${BLACK}${RED}${BLACK}${RED}${BLACK}`,
-                `${BLACK}${RED}${BLACK}${RED}${BLACK}${RED}${BLACK}${RED}`
-            ];
-
-            for (const frame of frames) {
-                await interaction.editReply({ 
-                    embeds: [new EmbedBuilder(embed.data).setDescription(`抽選中...\n\n${frame}`)], 
-                    components: [] 
-                });
-                await new Promise(r => setTimeout(r, 600));
-            }
-
-            // 結果判定
             const rand = Math.random();
             let resultColor;
-            if (rand < 0.05) resultColor = GREEN; // 5%で0（ハズレ）
+            if (rand < 0.05) resultColor = GREEN;
             else if (rand < 0.525) resultColor = RED;
             else resultColor = BLACK;
 
             const isWin = userChoice === resultColor;
             const multi = isWin ? 2.0 : 0;
-            
             const winAmount = Math.floor(bet * multi * totalMultiplier);
             const changeAmount = isWin ? (winAmount - bet) : -bet;
+
+            // 生涯獲得スコアの更新[cite: 5]
+            if (changeAmount > 0) {
+                await DataModel.findOneAndUpdate({ id: totalEarnedKey }, { $inc: { value: changeAmount } }, { upsert: true });
+            }
 
             const updatedRecord = await DataModel.findOneAndUpdate(
                 { id: moneyKey },
@@ -118,7 +103,7 @@ module.exports = {
                     `現在の残高: **${formatCoin(updatedRecord.value || 0)}** 💰`
                 ].join('\n'));
 
-            await interaction.editReply({ embeds: [resultEmbed] });
+            await interaction.editReply({ embeds: [resultEmbed], components: [] });
         });
     }
 };

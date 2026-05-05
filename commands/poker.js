@@ -11,7 +11,7 @@ const VALUE_MAP = { '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9':
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('poker')
-        .setDescription('ビデオポーカーで勝負します（全役実装済み！）')
+        .setDescription('ビデオポーカーで勝負します')
         .addStringOption(option => option.setName('bet').setDescription('賭け金 (例: 1m, 10b)').setRequired(true)),
 
     async execute(interaction) {
@@ -22,6 +22,7 @@ module.exports = {
         if (isNaN(bet) || bet < 100) return interaction.reply({ content: '有効な賭け金を100以上で入力してください。', ephemeral: true });
 
         const moneyKey = `money_${guildId}_${userId}`;
+        const totalEarnedKey = `total_earned_${guildId}_${userId}`; //[cite: 5]
         const userData = await DataModel.findOne({ id: moneyKey });
         if ((userData?.value || 0) < bet) return interaction.reply({ content: 'コインが足りません！', ephemeral: true });
 
@@ -57,7 +58,6 @@ module.exports = {
         collector.on('end', async () => {
             selected.forEach(i => hand[i] = deck.splice(0, 1)[0]);
 
-            // --- 倍率計算（じゃんけん方式） ---
             const petData = await DataModel.findOne({ id: `pet_data_${guildId}_${userId}` });
             let totalMultiplier = 0;
             const pets = petData?.value?.pets || [];
@@ -77,12 +77,9 @@ module.exports = {
             });
             if (totalMultiplier < 1) totalMultiplier = 1.0;
 
-            // --- 強化版：役判定ロジック ---
             const sortedValues = hand.map(c => VALUE_MAP[c.v]).sort((a, b) => a - b);
             const suits = hand.map(c => c.s);
             const isFlush = suits.every(s => s === suits[0]);
-            
-            // ストレート判定（A,2,3,4,5の特殊パターンも考慮）
             let isStraight = sortedValues.every((v, i) => i === 0 || v === sortedValues[i - 1] + 1);
             if (!isStraight && JSON.stringify(sortedValues) === JSON.stringify([2, 3, 4, 5, 14])) isStraight = true;
 
@@ -91,7 +88,6 @@ module.exports = {
             const countArray = Object.values(counts).sort((a, b) => b - a);
 
             let multi = 0, rank = "ノーペア";
-
             if (isFlush && isStraight && sortedValues[0] === 10) { multi = 100; rank = "ロイヤルストレートフラッシュ"; }
             else if (isFlush && isStraight) { multi = 50; rank = "ストレートフラッシュ"; }
             else if (countArray[0] === 4) { multi = 20; rank = "フォーカード"; }
@@ -104,6 +100,11 @@ module.exports = {
 
             const win = Math.floor(bet * multi * totalMultiplier);
             const changeAmount = (multi > 0) ? (win - bet) : -bet;
+
+            // ランキングデータの更新[cite: 5]
+            if (changeAmount > 0) {
+                await DataModel.findOneAndUpdate({ id: totalEarnedKey }, { $inc: { value: changeAmount } }, { upsert: true });
+            }
 
             const updatedRecord = await DataModel.findOneAndUpdate(
                 { id: moneyKey },

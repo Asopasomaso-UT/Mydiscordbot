@@ -23,6 +23,7 @@ module.exports = {
         if (isNaN(bet) || bet < 100) return interaction.reply({ content: '有効な賭け金を100以上で入力してください。', ephemeral: true });
 
         const moneyKey = `money_${guildId}_${userId}`;
+        const totalEarnedKey = `total_earned_${guildId}_${userId}`; //[cite: 5]
         const petKey = `pet_data_${guildId}_${userId}`;
 
         const [userData, petData] = await Promise.all([
@@ -32,7 +33,6 @@ module.exports = {
 
         if ((userData?.value || 0) < bet) return interaction.reply({ content: 'コインが足りません！', ephemeral: true });
 
-        // --- じゃんけんと同じ方式の倍率計算 ---
         let totalMultiplier = 0;
         const pets = petData?.value?.pets || [];
         const equippedIds = (petData?.value?.equippedPetIds || []).map(id => String(id));
@@ -51,10 +51,8 @@ module.exports = {
         });
         if (totalMultiplier < 1) totalMultiplier = 1.0;
 
-        // スロット回転ロジック
         let res = [0, 0, 0].map(() => SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)]);
 
-        // 当たり判定
         let multi = 0;
         if (res[0] === res[1] && res[1] === res[2]) {
             multi = res[0] === '7️⃣' ? 20 : res[0] === '💎' ? 10 : 5;
@@ -64,6 +62,11 @@ module.exports = {
 
         const win = Math.floor(bet * multi * totalMultiplier);
         const changeAmount = (multi > 0) ? (win - bet) : -bet;
+
+        // 生涯獲得スコアの更新[cite: 5]
+        if (changeAmount > 0) {
+            await DataModel.findOneAndUpdate({ id: totalEarnedKey }, { $inc: { value: changeAmount } }, { upsert: true });
+        }
 
         const updatedRecord = await DataModel.findOneAndUpdate(
             { id: moneyKey },
