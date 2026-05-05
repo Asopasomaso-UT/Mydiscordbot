@@ -68,7 +68,7 @@ module.exports = {
         // --- 3. UI構築 ---
         const embed = new EmbedBuilder()
             .setTitle('🏪 卵ショップ')
-            .setDescription(`各枠、購入から30分経過すると再購入可能です。\nラインナップ更新: <t:${Math.floor(nextUpdate / 1000)}:R>`)
+            .setDescription(`各枠、購入から30分経過すると再購入可能です。\nリストック: <t:${Math.floor(nextUpdate / 1000)}:R>`)
             .setColor('LuminousVividPink');
 
         const row = new ActionRowBuilder();
