@@ -127,13 +127,13 @@ const SC_SHOP_ITEMS = {
         name: 'Exotic egg',
         price: 10,
         type: 'egg', // 種類を分ける
-        Egg_key: 'Exotic egg'
+        Egg_key: 'Exotic_egg'
     },
     'Premium_egg': {
         name: 'Premium egg',
         price: 30,
         type: 'egg', // 種類を分ける
-        Egg_key: 'Premium egg'
+        Egg_key: 'Premium_egg'
     },
 };
 

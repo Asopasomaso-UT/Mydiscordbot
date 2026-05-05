@@ -189,7 +189,7 @@ module.exports = {
                 } else if (item.type === 'egg') {
                     await DataModel.findOneAndUpdate(
                         { id: petKey },
-                        { $inc: { [`value.inventory.${item.eggKey}`]: 1 } }
+                        { $inc: { [`value.inventory.${item.Egg_Key}`]: 1 } }
                     );
                     resultMessage += `\n\`/hatch-egg\` で孵化させることができます。`;
                 } else if (item.type === 'role') {
