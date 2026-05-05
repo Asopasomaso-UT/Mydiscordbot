@@ -11,14 +11,15 @@ const EGG_EMOJI = {
     'Rare_egg': '🔵',
     'Legendary_egg': '🟡',
     'Mythic_egg': '🟣',
-    'Slime_egg': '👽',
+    'slime_egg': '👽',
+    'Undertale_egg': '💀',
     'Exotic_egg': '💎'
 };
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('egg-shop')
-        .setDescription('30分ごとに在庫が入れ替わる卵ショップ'),
+        .setDescription('枠ごとに30分に1回購入可能な卵ショップ'),
 
     async execute(interaction) {
         const guildId = interaction.guild.id;
@@ -27,26 +28,27 @@ module.exports = {
         const moneyKey = `money_${guildId}_${userId}`;
         const invKey = `pet_data_${guildId}_${userId}`;
         const now = Date.now();
+        const cooldownMs = 30 * 60 * 1000;
 
         let shopData = await DataModel.findOne({ id: shopKey });
         
-        // --- 1. 在庫の更新とクリーンアップ ---
-        // 以下のいずれかの場合に在庫を再生成する:
-        // - データが存在しない
-        // - 30分経過した
-        // - 現在の在庫(stock)の中に、EGG_CONFIGに存在しない古いキーが混じっている (エラー防止)
-        const hasInvalidEgg = shopData?.value?.stock?.some(key => !EGG_CONFIG[key]);
+        // --- 1. 在庫の更新（枠ごとに独立した確率抽選） ---
         const isExpired = !shopData || (now - shopData.value.lastUpdate) > 1800000;
 
-        if (isExpired || hasInvalidEgg) {
-            // 通常ショップに並ぶ卵（isSuperShopフラグがないもの）だけを抽出
-            const availableEggKeys = Object.keys(EGG_CONFIG).filter(key => !EGG_CONFIG[key].isSuperShop);
+        if (isExpired) {
+            const availableEggs = Object.entries(EGG_CONFIG).filter(([_, cfg]) => !cfg.isSuperShop);
             
-            const newStock = [];
-            for (let i = 0; i < 3; i++) {
-                const randomEgg = availableEggKeys[Math.floor(Math.random() * availableEggKeys.length)];
-                newStock.push(randomEgg);
-            }
+            const pickRandomEgg = () => {
+                const totalWeight = availableEggs.reduce((sum, [_, cfg]) => sum + (cfg.shopChance || 10), 0);
+                let random = Math.random() * totalWeight;
+                for (const [key, cfg] of availableEggs) {
+                    if (random < (cfg.shopChance || 10)) return key;
+                    random -= (cfg.shopChance || 10);
+                }
+                return availableEggs[0][0];
+            };
+
+            const newStock = [pickRandomEgg(), pickRandomEgg(), pickRandomEgg()];
 
             shopData = await DataModel.findOneAndUpdate(
                 { id: shopKey },
@@ -58,74 +60,96 @@ module.exports = {
         const currentStock = shopData.value.stock;
         const nextUpdate = shopData.value.lastUpdate + 1800000;
 
+        // --- 2. 各枠のクールダウン確認 ---
+        const cooldownQueries = [0, 1, 2].map(i => `last_egg_buy_${userId}_slot${i}`);
+        const cooldownDocs = await DataModel.find({ id: { $in: cooldownQueries } });
+        const cooldownMap = Object.fromEntries(cooldownDocs.map(d => [d.id, d.value]));
+
+        // --- 3. UI構築 ---
         const embed = new EmbedBuilder()
             .setTitle('🏪 卵ショップ')
-            .setDescription(`30分ごとにラインナップが変わります。\n次回の入荷: <t:${Math.floor(nextUpdate / 1000)}:R>`)
-            .setColor('LuminousVividPink')
-            .setTimestamp();
+            .setDescription(`各枠、購入から30分経過すると再購入可能です。\nラインナップ更新: <t:${Math.floor(nextUpdate / 1000)}:R>`)
+            .setColor('LuminousVividPink');
 
         const row = new ActionRowBuilder();
 
-        // --- 2. 表示の生成 ---
         currentStock.forEach((eggKey, index) => {
             const egg = EGG_CONFIG[eggKey];
-            
-            // 念のためのガード（万が一キーが見つからない場合は表示しない）
             if (!egg) return;
+
+            const slotCooldownKey = `last_egg_buy_${userId}_slot${index}`;
+            const lastBuy = cooldownMap[slotCooldownKey] || 0;
+            const canBuyAt = lastBuy + cooldownMs;
+            const isOnCooldown = now < canBuyAt;
 
             const emoji = EGG_EMOJI[eggKey] || '🥚';
             
             embed.addFields({ 
                 name: `枠 ${index + 1}: ${emoji} ${egg.name}`, 
-                value: `価格: ${formatCoin(egg.price)} 💰`, 
+                value: isOnCooldown 
+                    ? `🕒 再購入可能: <t:${Math.floor(canBuyAt / 1000)}:R>` 
+                    : `価格: ${formatCoin(egg.price)} 💰`,
                 inline: true 
             });
             
             row.addComponents(
                 new ButtonBuilder()
                     .setCustomId(`buy_egg_${eggKey}_${index}`)
-                    .setLabel(`${index + 1}番目を購入`)
-                    .setStyle(ButtonStyle.Success)
+                    .setLabel(isOnCooldown ? '制限中' : `枠${index + 1}購入`)
+                    .setStyle(isOnCooldown ? ButtonStyle.Secondary : ButtonStyle.Success)
+                    .setDisabled(isOnCooldown)
             );
         });
 
-        // ボタンが1つも生成されなかった（全ての卵が無効だった）場合の処理
-        if (row.components.length === 0) {
-            return interaction.reply({ content: '現在ショップに並べられる卵がありません。', ephemeral: true });
-        }
-
         const response = await interaction.reply({ embeds: [embed], components: [row], fetchReply: true });
 
-        // --- 3. 購入ロジック ---
+        // --- 4. ボタン操作（購入処理） ---
         const collector = response.createMessageComponentCollector({ time: 60000 });
 
         collector.on('collect', async (i) => {
             if (i.user.id !== userId) return i.reply({ content: '自分の画面で操作してください。', ephemeral: true });
 
             const parts = i.customId.split('_');
-            const eggKey = parts.slice(2, -1).join('_'); 
+            const index = parseInt(parts[parts.length - 1]); 
+            const eggKey = parts.slice(2, -1).join('_');
             const targetEgg = EGG_CONFIG[eggKey];
+            const slotCooldownKey = `last_egg_buy_${userId}_slot${index}`;
 
-            if (!targetEgg) return i.reply({ content: 'この卵は現在取り扱っておりません。', ephemeral: true });
+            const checkCooldown = await DataModel.findOne({ id: slotCooldownKey });
+            if (checkCooldown && Date.now() < (Number(checkCooldown.value) + cooldownMs)) {
+                return i.reply({ content: `枠${index + 1}はまだクールダウン中です。`, ephemeral: true });
+            }
 
             const moneyData = await DataModel.findOne({ id: moneyKey });
             const currentMoney = moneyData ? (Number(moneyData.value) || 0) : 0;
 
             if (currentMoney < targetEgg.price) {
-                return i.reply({ content: `コインが足りません！ (必要: ${formatCoin(targetEgg.price)})`, ephemeral: true });
+                return i.reply({ content: 'コインが足りません！', ephemeral: true });
             }
 
-            // 決済処理
             await Promise.all([
                 DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: -targetEgg.price } }),
                 DataModel.findOneAndUpdate(
                     { id: invKey },
                     { $inc: { [`value.inventory.${eggKey}`]: 1 } },
                     { upsert: true }
+                ),
+                DataModel.findOneAndUpdate(
+                    { id: slotCooldownKey },
+                    { value: Date.now() },
+                    { upsert: true }
                 )
             ]);
 
-            await i.reply({ content: `✅ **${targetEgg.name}** を購入しました！`, ephemeral: true });
+            await i.reply({ content: `✅ **${targetEgg.name}** (枠${index + 1}) を購入しました！`, ephemeral: true });
+
+            const updatedRow = ActionRowBuilder.from(row);
+            updatedRow.components[index] = ButtonBuilder.from(updatedRow.components[index])
+                .setDisabled(true)
+                .setLabel('購入済み')
+                .setStyle(ButtonStyle.Secondary);
+            
+            await interaction.editReply({ components: [updatedRow] });
         });
     }
 };

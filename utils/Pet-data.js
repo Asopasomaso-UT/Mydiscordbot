@@ -53,41 +53,40 @@ const PET_MASTER = {
     'Undyne the Undying': { rarity: 'Secret', multiplier: 99.00 },
 };
 
+// EGG_CONFIG の各卵に shopChance を追加
 const EGG_CONFIG = {
     'common_egg': {
-        name: 'Common Egg', price: 1000,
-        rates: { 'Common': 100 }, // 100%コモン
+        name: 'Common Egg', price: 1000, shopChance: 100, // 出やすい
+        rates: { 'Common': 100 },
         contents: ['スライム', '豆しば', 'おたまじゃくし', '野良猫', '小鳥']
     },
     'Uncommon_egg': {
-        name: 'Uncommon Egg', price: 3000,
+        name: 'Uncommon Egg', price: 3000, shopChance: 90,
         rates: { 'Uncommon': 100 },
         contents: ['三毛猫', 'シマリス', '子豚', 'ウサギ', 'ペンギン']
     },
     'Rare_egg': {
-        name: 'Rare Egg', price: 10000,
+        name: 'Rare Egg', price: 10000, shopChance: 60,
         rates: { 'Rare': 100 },
         contents: ['シロクマ', 'レッサーパンダ', '鷹', '柴犬', 'キツネ']
     },
     'Legendary_egg': {
-        name: 'Legendary Egg', price: 50000,
+        name: 'Legendary Egg', price: 50000, shopChance: 40,
         rates: { 'Legendary': 100 },
         contents: ['フェニックス', 'ユニコーン', '白虎', '九尾', 'グリフィン']
     },
     'Mythic_egg': {
-        name: 'Mythic Egg', price: 200000,
+        name: 'Mythic Egg', price: 200000, shopChance: 20, // 出にくい
         rates: { 'Mythic': 100 },
         contents: ['バハムート', 'ケルベロス', 'ゼウスの鷲', 'リヴァイアサン', 'アーサー王の馬']
     },
     'slime_egg': {
-        name: 'Slime Egg', price: 150000,
-        // 複数レアリティが混ざる場合の例
+        name: 'Slime Egg', price: 150000, shopChance: 15,
         rates: { 'Common': 40, 'Uncommon': 30, 'Rare': 15, 'Epic': 10, 'Legendary': 4, 'Mythic': 1 },
         contents: ['スライム', 'キラキラスライム', 'レアスライム', 'スライムの英雄', 'レジェンドスライム', '神話のスライム', 'ドラクエスライム', 'Minecraft slime']
     },
     'Undertale_egg': {
-        name: 'Undertale Egg', price: 500000,
-        // 複数レアリティが混ざる場合の例
+        name: 'Undertale Egg', price: 500000, shopChance: 5, // レア
         rates: {'Epic': 40, 'Legendary': 30, 'Mythic': 15, 'Unique':10, 'Artifact':4.85, 'secret':0.15 },
         contents: ['Flowey', 'Toriel', 'Undyne', 'Asgore', 'Sans', 'Undyne the Undying']
     },
