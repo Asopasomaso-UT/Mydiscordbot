@@ -20,6 +20,7 @@ const PET_MASTER = {
     '人魚': { rarity: 'Epic', multiplier: 1.40 },
     'スライムの英雄': { rarity: 'Epic', multiplier: 1.40 },
     'Flowey': { rarity: 'Epic', multiplier: 1.40 },
+    'Gargoyle': { rarity: 'Epic', multiplier: 1.40 },
     'レジェンドスライム': { rarity: 'Legendary', multiplier: 1.50 },
     'フェニックス': { rarity: 'Legendary', multiplier: 1.50 },
     'ユニコーン': { rarity: 'Legendary', multiplier: 1.50 },
@@ -28,6 +29,7 @@ const PET_MASTER = {
     'Toriel': { rarity: 'Legendary', multiplier: 1.50 },
     'グリフィン': { rarity: 'Legendary', multiplier: 1.50 },
     '半魚人': { rarity: 'Legendary', multiplier: 1.50 },
+    'ドラゴン': { rarity: 'Legendary', multiplier: 1.50 },
     '神話のスライム': { rarity: 'Mythic', multiplier: 2.00 },
     'バハムート': { rarity: 'Mythic', multiplier: 2.00 },
     'ゼウスの鷲': { rarity: 'Mythic', multiplier: 2.00 },
@@ -35,13 +37,16 @@ const PET_MASTER = {
     'リヴァイアサン': { rarity: 'Mythic', multiplier: 2.00 },
     'アーサー王の馬': { rarity: 'Mythic', multiplier: 2.00 },
     '魚人': { rarity: 'Mythic', multiplier: 2.00 },   
-    'Undyne': { rarity: 'Mythic', multiplier: 2.00 }, 
+    'Undyne': { rarity: 'Mythic', multiplier: 2.00 },
+    'ハデス': { rarity: 'Mythic', multiplier: 2.00 },
     'ドラクエスライム': { rarity: 'Unique', multiplier: 4.00 },
     '海蛇': { rarity: 'Unique', multiplier: 4.00 },
     'Asgore': { rarity: 'Unique', multiplier: 4.00 },
+    '虚無の支配者': { rarity: 'Unique', multiplier: 4.00 },
     'Minecraft slime': { rarity: 'Artifact', multiplier: 25.00 },
-    'シーモンキー': { rarity: 'Artifact', multiplier: 10.00 },
+    'シーモンキー': { rarity: 'Artifact', multiplier: 40.00 },
     'Sans': { rarity: 'Artifact', multiplier: 20.00 },
+    'Omega flowey': { rarity: 'Artifact', multiplier: 20.00 },
     '首無し騎士': { rarity: 'Secret', multiplier: 75.00 },
     'Skibidi toilet': { rarity: 'Secret', multiplier: 80.00 },
     'スマーフキャット': { rarity: 'Secret', multiplier: 105.00 },
@@ -51,6 +56,7 @@ const PET_MASTER = {
     'おにっぴ': { rarity: 'Secret', multiplier: 140.00 },
     '野獣先輩': { rarity: 'Secret', multiplier: 114.51 },
     'Undyne the Undying': { rarity: 'Secret', multiplier: 99.00 },
+    'Gemini-3': { rarity: 'Secret', multiplier: 85.00 },
 };
 
 // EGG_CONFIG の各卵に shopChance を追加
@@ -87,19 +93,24 @@ const EGG_CONFIG = {
     },
     'Undertale_egg': {
         name: 'Undertale Egg', price: 500000, shopChance: 5, // レア
-        rates: {'Epic': 40, 'Legendary': 30, 'Mythic': 15, 'Unique':10, 'Artifact':4.85, 'secret':0.15 },
+        rates: {'Epic': 40, 'Legendary': 30, 'Mythic': 15, 'Unique':10, 'Artifact':4.85, 'Secret':0.15 },
         contents: ['Flowey', 'Toriel', 'Undyne', 'Asgore', 'Sans', 'Undyne the Undying']
     },
     'Exotic_egg': {
         name: 'Exotic Egg', price: 10, isSuperShop: true,
         rates: { 'Epic': 50, 'Legendary': 30, 'Mythic': 15, 'Unique': 4, 'Artifact': 1 },
         contents: ['人魚', '半魚人', '魚人', '海蛇', 'シーモンキー']
+    },
+    'Premium_egg': {
+        name: 'Premium Egg', price: 10, isSuperShop: true,
+        rates: { 'Epic': 49.5, 'Legendary': 30, 'Mythic': 15, 'Unique': 4, 'Artifact': 1, 'Secret':0.5 },
+        contents: ['Gargoyle', 'ドラゴン', 'ハデス', '虚無の支配者', 'Omega flowey', 'Gemini-3']
     }
 };
 
 const SECRET_CONFIG = {
     CHANCE: 0.00001, // 基本 0.001% (万が一の当選)
-    PETS: ['首無し騎士', 'スマーフキャット', 'アソパソマソ', 'Keyboard Crusher', 'Angel of darkness', 'おにっぴ', '野獣先輩']
+    PETS: ['首無し騎士', 'スマーフキャット', 'アソパソマソ', 'Keyboard Crusher', 'Angel of darkness', 'おにっぴ', '野獣先輩', 'Gemini-3']
 };
 
 const EVOLUTION_STAGES = [
@@ -156,8 +167,8 @@ const ENCHANT_UPGRADE = {
 // utils/Pet-data.js などの設定ファイルへ
 
 const ENCHANT_CHANCES = {
-    'power': 68.9,          // 通常枠
-    'energy': 20.0,         // 中レア
+    'power': 58.9,          // 通常枠
+    'energy': 30.0,         // 中レア
     'special_hatch': 10.0,   // レア
     'secret_agent': 1.0,    // 超レア (1%)
     'mimic': 0.1            // 伝説級 (0.1%)
@@ -187,6 +198,7 @@ const ITEM_MASTER = {
     'Mythic_egg': { name: '🟣Mythic Egg' },
     'slime_egg': { name: '👽Slime Egg' },
     'Undertale_egg': { name: '💀Undertale Egg' },
+    'Premium_egg': { name: '👑Premium Egg' },
     'Exotic_egg': { name: '💎Exotic Egg' }
 };
 
