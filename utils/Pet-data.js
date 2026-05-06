@@ -46,7 +46,7 @@ const PET_MASTER = {
     'Minecraft slime': { rarity: 'Artifact', multiplier: 25.00 },
     'シーモンキー': { rarity: 'Artifact', multiplier: 40.00 },
     'Sans': { rarity: 'Artifact', multiplier: 20.00 },
-    'Omega flowey': { rarity: 'Artifact', multiplier: 20.00 },
+    'Omega flowey': { rarity: 'Artifact', multiplier: 35.00 },
     '首無し騎士': { rarity: 'Secret', multiplier: 75.00 },
     'Skibidi toilet': { rarity: 'Secret', multiplier: 80.00 },
     'スマーフキャット': { rarity: 'Secret', multiplier: 105.00 },
@@ -62,7 +62,7 @@ const PET_MASTER = {
     'Triceratops': { rarity: 'Legendary', multiplier: 1.50 },
     'Tyrannosaurus Rex': { rarity: 'Mythic', multiplier: 2.00 },
     'Mosasaurus': { rarity: 'Unique', multiplier: 5.00 },
-    'Cyber-Raptor': { rarity: 'Artifact', multiplier: 15.00 },
+    'Cyber-Raptor': { rarity: 'Artifact', multiplier: 30.00 },
     'Primal Fear': { rarity: 'Secret', multiplier: 100.00 },
     // Relic Egg Pets (上位互換)
     'Spinosaurus': { rarity: 'Epic', multiplier: 1.45 },
