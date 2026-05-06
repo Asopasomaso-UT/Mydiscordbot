@@ -57,6 +57,20 @@ const PET_MASTER = {
     '野獣先輩': { rarity: 'Secret', multiplier: 114.51 },
     'Undyne the Undying': { rarity: 'Secret', multiplier: 99.00 },
     'Gemini-3': { rarity: 'Secret', multiplier: 85.00 },
+    // Ancient Egg Pets
+    'Pteranodon': { rarity: 'Epic', multiplier: 1.40 },
+    'Triceratops': { rarity: 'Legendary', multiplier: 1.50 },
+    'Tyrannosaurus Rex': { rarity: 'Mythic', multiplier: 2.00 },
+    'Mosasaurus': { rarity: 'Unique', multiplier: 5.00 },
+    'Cyber-Raptor': { rarity: 'Artifact', multiplier: 15.00 },
+    'Primal Fear': { rarity: 'Secret', multiplier: 100.00 },
+    // Relic Egg Pets (上位互換)
+    'Spinosaurus': { rarity: 'Epic', multiplier: 1.45 },
+    'Ankylosaurus': { rarity: 'Legendary', multiplier: 1.80 },
+    'Giga-Tyrant': { rarity: 'Mythic', multiplier: 3.50 },
+    'Dreadnoughtus': { rarity: 'Unique', multiplier: 8.00 },
+    'Ancient Wyvern': { rarity: 'Artifact', multiplier: 40.00 },
+    'The Genesis Dragon': { rarity: 'Secret', multiplier: 280.00 },
 };
 
 // EGG_CONFIG の各卵に shopChance を追加
@@ -105,7 +119,17 @@ const EGG_CONFIG = {
         name: 'Premium Egg', price: 10, isSuperShop: true,
         rates: { 'Epic': 49.5, 'Legendary': 30, 'Mythic': 15, 'Unique': 4, 'Artifact': 1, 'Secret':0.5 },
         contents: ['Gargoyle', 'ドラゴン', 'ハデス', '虚無の支配者', 'Omega flowey', 'Gemini-3']
-    }
+    },
+    'ancient_egg': {
+        name: 'Ancient Egg', price: 15, isSuperShop: true,
+        rates: { 'Epic': 50, 'Legendary': 30, 'Mythic': 15, 'Unique': 4, 'Artifact': 0.9, 'Secret': 0.1 },
+        contents: ['Pteranodon', 'Triceratops', 'Tyrannosaurus Rex', 'Mosasaurus', 'Cyber-Raptor', 'Primal Fear']
+    },
+    'relic_egg': {
+        name: 'Relic Egg', price: 30, isSuperShop: true,
+        rates: { 'Epic': 40, 'Legendary': 30, 'Mythic': 20, 'Unique': 7, 'Artifact': 2.5, 'Secret': 0.015 },
+        contents: ['Spinosaurus', 'Ankylosaurus', 'Giga-Tyrant', 'Dreadnoughtus', 'Ancient Wyvern', 'The Genesis Dragon']
+    },
 };
 
 const SECRET_CONFIG = {
@@ -145,6 +169,18 @@ const SC_SHOP_ITEMS = {
         price: 30,
         type: 'egg', // 種類を分ける
         Egg_key: 'Premium_egg'
+    },
+    'Ancient_egg': {
+        name: 'Ancient Egg',
+        price: 15,
+        type: 'egg',
+        Egg_key: 'Ancient_egg'
+    },
+    'Relic_egg': {
+        name: 'Relic Egg',
+        price: 40,
+        type: 'egg',
+        Egg_key: 'Relic_egg'
     },
 };
 
@@ -199,7 +235,9 @@ const ITEM_MASTER = {
     'slime_egg': { name: '👽Slime Egg' },
     'Undertale_egg': { name: '💀Undertale Egg' },
     'Premium_egg': { name: '👑Premium Egg' },
-    'Exotic_egg': { name: '💎Exotic Egg' }
+    'Exotic_egg': { name: '💎Exotic Egg' },
+    'ancient_egg': { name: '🦴Ancient Egg' },
+    'relic_egg': { name: '🏺Relic Egg' },
 };
 
 module.exports = { 
