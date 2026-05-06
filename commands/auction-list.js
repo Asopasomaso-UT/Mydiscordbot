@@ -1,153 +1,81 @@
-const { 
-    SlashCommandBuilder, 
-    EmbedBuilder, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle,
-    ComponentType 
-} = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, ComponentType } = require('discord.js');
 const mongoose = require('mongoose');
 const DataModel = mongoose.models.QuickData;
-const { formatCoin } = require('../utils/formatHelper');
+const { formatCoin, parseCoin } = require('../utils/formatHelper');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('auction-list')
-        .setDescription('現在出品中のアイテム一覧を表示・購入します'),
+        .setDescription('出品一覧を表示します'),
 
     async execute(interaction) {
         const guildId = interaction.guild.id;
         const buyerId = interaction.user.id;
-        const auctionListKey = `auction_listings_${guildId}`;
+        const auctionKey = `auction_listings_${guildId}`;
+        const data = await DataModel.findOne({ id: auctionKey });
+        const items = data?.value?.items || [];
 
-        // 1. 出品リストの取得
-        const result = await DataModel.findOne({ id: auctionListKey });
-        let items = result?.value?.items || [];
+        if (items.length === 0) return interaction.reply('📢 出品中のアイテムはありません。');
 
-        if (items.length === 0) {
-            return interaction.reply('📢 現在、オークションに出品されているアイテムはありません。');
-        }
+        const itemNames = { 'rare_candy': '🍬 不思議なあめ', 'enchant_shield': '🛡️ エンチャントシールド', 'monday_bread': '🍞 特製チョコパン', 'common_egg': '🥚 Common Egg' };
 
-        // アイテム表示名の設定[cite: 7]
-        const itemNames = {
-            'rare_candy': '🍬 不思議なあめ',
-            'enchant_shield': '🛡️ エンチャントシールド',
-            'monday_bread': '🍞 特製チョコパン',
-            'weekend_charm': '✨ 週末の至高のひととき',
-            'birthday_cake': '🎂 アソパソの誕生日ケーキ'
-        };
-
-        // 2. Embed作成
-        const embed = new EmbedBuilder()
-            .setTitle('🔨 アソパ・オークション会場')
-            .setDescription('ほしいアイテムの番号のボタンを押して購入してください。\n※自分の出品物は購入できません。')
-            .setColor('Gold')
-            .setTimestamp();
-
+        const embed = new EmbedBuilder().setTitle('🔨 オークション会場').setColor('Gold');
         const rows = [];
         let currentRow = new ActionRowBuilder();
 
         items.forEach((item, index) => {
+            const isFixed = item.type === 'fixed';
             const displayName = itemNames[item.itemId] || item.itemId;
             
             embed.addFields({
-                name: `${index + 1}. ${displayName}`,
-                value: `価格: ${formatCoin(item.price)} 💰\n出品者: <@${item.sellerId}>`,
+                name: `${index + 1}. ${displayName} × ${item.quantity}`,
+                value: `形式: ${isFixed ? '⚡即決' : '⏳入札'}\n価格: ${formatCoin(item.price)} 💰\n出品者: <@${item.sellerId}>`,
                 inline: true
             });
 
             currentRow.addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`auc_buy_${item.listingId}`)
-                    .setLabel(`${index + 1}番を購入`)
-                    .setStyle(ButtonStyle.Primary)
-                    // 自分の出品物なら無効化する演出（任意）
+                    .setCustomId(`auc_${isFixed ? 'buy' : 'bid'}_${item.listingId}`)
+                    .setLabel(`${index + 1}番に${isFixed ? '購入' : '入札'}`)
+                    .setStyle(isFixed ? ButtonStyle.Success : ButtonStyle.Primary)
                     .setDisabled(item.sellerId === buyerId)
             );
 
-            // Discordの制限（1行5ボタンまで）に合わせる
             if (currentRow.components.length === 5 || index === items.length - 1) {
-                rows.push(currentRow);
-                currentRow = new ActionRowBuilder();
+                rows.push(currentRow); currentRow = new ActionRowBuilder();
             }
         });
 
-        const response = await interaction.reply({ 
-            embeds: [embed], 
-            components: rows,
-            fetchReply: true 
-        });
-
-        // 3. ボタン操作の待機（入札・購入処理）
-        const collector = response.createMessageComponentCollector({ 
-            componentType: ComponentType.Button, 
-            time: 300000 
-        });
+        const response = await interaction.reply({ embeds: [embed], components: rows, fetchReply: true });
+        const collector = response.createMessageComponentCollector({ time: 300000 });
 
         collector.on('collect', async (i) => {
-            if (i.user.id !== buyerId) {
-                return i.reply({ content: '自分のコマンド画面で操作してください。', ephemeral: true });
-            }
+            const [_, action, listingId] = i.customId.split('_');
+            const latest = await DataModel.findOne({ id: auctionKey });
+            const item = latest?.value?.items.find(it => it.listingId === listingId);
 
-            const listingId = i.customId.replace('auc_buy_', '');
-            
-            // 最新のデータを再取得して在庫確認
-            const latestData = await DataModel.findOne({ id: auctionListKey });
-            const currentItems = latestData?.value?.items || [];
-            const itemIndex = currentItems.findIndex(item => item.listingId === listingId);
+            if (!item) return i.reply({ content: '既に終了しています。', ephemeral: true });
 
-            if (itemIndex === -1) {
-                return i.reply({ content: '❌ 申し訳ありません。そのアイテムは既に売り切れたか、取り消されました。', ephemeral: true });
-            }
+            if (action === 'buy') {
+                // 即決処理 (前述のロジックと同じ)[cite: 7]
+                const moneyData = await DataModel.findOne({ id: `money_${guildId}_${buyerId}` });
+                if ((moneyData?.value || 0) < item.price) return i.reply({ content: 'コイン不足です。', ephemeral: true });
 
-            const targetItem = currentItems[itemIndex];
-
-            // 購入者の所持金チェック[cite: 5]
-            const moneyKey = `money_${guildId}_${buyerId}`;
-            const buyerMoneyDoc = await DataModel.findOne({ id: moneyKey });
-            const currentMoney = buyerMoneyDoc ? (Number(buyerMoneyDoc.value) || 0) : 0;
-
-            if (currentMoney < targetItem.price) {
-                return i.reply({ content: `❌ コインが足りません！（必要: ${formatCoin(targetItem.price)} 💰）`, ephemeral: true });
-            }
-
-            // 4. 取引実行（DB一括更新）
-            const sellerMoneyKey = `money_${guildId}_${targetItem.sellerId}`;
-            const sellerTotalKey = `total_earned_${guildId}_${targetItem.sellerId}`; // 生涯獲得額
-            const buyerPetKey = `pet_data_${guildId}_${buyerId}`;
-
-            try {
                 await Promise.all([
-                    // 購入者: 支払い ＆ アイテム付与[cite: 7]
-                    DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: -targetItem.price } }),
-                    DataModel.findOneAndUpdate(
-                        { id: buyerPetKey },
-                        { $inc: { [`value.inventory.${targetItem.itemId}`]: 1 } },
-                        { upsert: true }
-                    ),
-                    // 出品者: 売上受取 ＆ 生涯スコア加算
-                    DataModel.findOneAndUpdate({ id: sellerMoneyKey }, { $inc: { value: targetItem.price } }, { upsert: true }),
-                    DataModel.findOneAndUpdate({ id: sellerTotalKey }, { $inc: { value: targetItem.price } }, { upsert: true }),
-                    // リストから削除
-                    DataModel.findOneAndUpdate(
-                        { id: auctionListKey },
-                        { $pull: { 'value.items': { listingId: listingId } } }
-                    )
+                    DataModel.findOneAndUpdate({ id: `money_${guildId}_${buyerId}` }, { $inc: { value: -item.price } }),
+                    DataModel.findOneAndUpdate({ id: `money_${guildId}_${item.sellerId}` }, { $inc: { value: item.price } }),
+                    DataModel.findOneAndUpdate({ id: `total_earned_${guildId}_${item.sellerId}` }, { $inc: { value: item.price } }), //
+                    DataModel.findOneAndUpdate({ id: `pet_data_${guildId}_${buyerId}` }, { $inc: { [`value.inventory.${item.itemId}`]: item.quantity } }, { upsert: true }),
+                    DataModel.findOneAndUpdate({ id: auctionKey }, { $pull: { 'value.items': { listingId: item.listingId } } })
                 ]);
-
-                const successName = itemNames[targetItem.itemId] || targetItem.itemId;
-                await i.reply({ 
-                    content: `🎊 **落札成功！**\n**${successName}** を **${formatCoin(targetItem.price)} 💰** で購入しました！\n代金は <@${targetItem.sellerId}> の口座へ振り込まれました。`,
-                    ephemeral: false 
-                });
-
-                // メッセージを更新してボタンを消す（または無効化）
-                await interaction.editReply({ components: [] });
-                collector.stop();
-
-            } catch (err) {
-                console.error('Auction Buy Error:', err);
-                await i.reply({ content: '取引中にエラーが発生しました。', ephemeral: true });
+                await i.reply(`✅ **${itemNames[item.itemId] || item.itemId}** を購入しました！`);
+            } 
+            else if (action === 'bid') {
+                // 入札用モーダルの表示[cite: 8]
+                const modal = new ModalBuilder().setCustomId(`modal_bid_${listingId}`).setTitle('入札金額を入力');
+                const input = new TextInputBuilder().setCustomId('bid_amount').setLabel(`現在: ${formatCoin(item.price)} (単位使用可)`).setStyle(TextInputStyle.Short).setRequired(true);
+                modal.addComponents(new ActionRowBuilder().addComponents(input));
+                await i.showModal(modal);
             }
         });
     }
