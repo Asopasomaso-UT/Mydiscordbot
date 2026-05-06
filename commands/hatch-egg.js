@@ -160,7 +160,7 @@ module.exports = {
             await i.update({ embeds: [embed], components: [] });
             
             if (secretFound) {
-                await interaction.channel.send(`🎊 **OMG!** ${interaction.user} が一括孵化で **SECRET** を引き当てました！`);
+                await interaction.channel.send(`🎊 **OMG!** ${interaction.user} が **SECRET** を引き当てました！`);
             }
         });
     }
