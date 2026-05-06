@@ -18,12 +18,11 @@ module.exports = {
         const doc = await DataModel.findOne({ id: petKey });
         const discovered = doc?.value?.discovered || [];
 
-        // マスタデータにある「全ペット種」のリスト
+        // マスタデータにある全ペット種（ベース名）
         const allPetBaseNames = Object.keys(PET_MASTER);
         const totalCount = allPetBaseNames.length;
 
-        // 発見済みの「種（ベース名）」を抽出して重複を排除
-        // 例: ["Slime", "Golden Slime"] があっても "Slime" の1種としてカウント
+        // 発見済みの「ベース名」をSetで抽出（重複排除）
         const discoveredBaseNames = new Set();
         discovered.forEach(fullName => {
             const baseName = allPetBaseNames.find(bn => fullName.includes(bn));
@@ -35,47 +34,56 @@ module.exports = {
         const discoveredCount = discoveredBaseNames.size;
         const completionRate = ((discoveredCount / totalCount) * 100).toFixed(1);
 
-        // レアリティごとに発見済みの種を分類
-        const categorizedDiscovered = {};
-        discoveredBaseNames.forEach(baseName => {
+        // レアリティごとに「全てのペット」を分類する
+        const rarityGroups = {};
+        allPetBaseNames.forEach(baseName => {
             const rarity = PET_MASTER[baseName]?.rarity || 'Unknown';
-            if (!categorizedDiscovered[rarity]) categorizedDiscovered[rarity] = [];
+            if (!rarityGroups[rarity]) rarityGroups[rarity] = [];
             
-            // 図鑑に表示する際、その種の中で「最高ランク」のものを表示する
-            const highestEvo = discovered
-                .filter(fn => fn.includes(baseName))
-                .sort((a, b) => {
-                    // EVOLUTION_STAGESの順序に基づいてソート
-                    const getRank = (name) => {
-                        const stage = EVOLUTION_STAGES.find(s => s.name && name.startsWith(s.name));
-                        return stage ? EVOLUTION_STAGES.indexOf(stage) : 0;
-                    };
-                    return getRank(b) - getRank(a);
-                })[0];
-
-            categorizedDiscovered[rarity].push(highestEvo);
+            // 発見済みか判定
+            if (discoveredBaseNames.has(baseName)) {
+                // 発見済みの場合、その種の中での最高ランク名を取得
+                const highestEvo = discovered
+                    .filter(fn => fn.includes(baseName))
+                    .sort((a, b) => {
+                        const getRank = (name) => {
+                            const stage = EVOLUTION_STAGES.find(s => s.name && name.startsWith(s.name));
+                            return stage ? EVOLUTION_STAGES.indexOf(stage) : 0;
+                        };
+                        return getRank(b) - getRank(a);
+                    })[0];
+                rarityGroups[rarity].push(`**${highestEvo}**`);
+            } else {
+                // 未発見の場合
+                rarityGroups[rarity].push('`???`');
+            }
         });
 
         const embed = new EmbedBuilder()
             .setTitle(`📖 ペット図鑑 (${interaction.user.username})`)
             .setColor('Gold')
             .setDescription(`種コンプリート率: **${completionRate}%** (${discoveredCount} / ${totalCount})`)
-            .setThumbnail(interaction.user.displayAvatarURL());
+            .setThumbnail(interaction.user.displayAvatarURL())
+            .setFooter({ text: '※進化させると図鑑の名前がアップグレードされます' });
 
         const rarityOrder = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic', 'Unique', 'Artifact', 'SECRET'];
         
         rarityOrder.forEach(rarity => {
-            if (categorizedDiscovered[rarity]) {
-                // 発見済みの名前をリスト化
-                const list = categorizedDiscovered[rarity].join(', ');
+            if (rarityGroups[rarity]) {
+                const list = rarityGroups[rarity].join(', ');
+                // Discordのフィールド制限（1024文字）対策
                 const displayList = list.length > 1024 ? list.substring(0, 1021) + '...' : list;
-                embed.addFields({ name: `${rarity} (${categorizedDiscovered[rarity].length})`, value: displayList });
+                
+                // そのレアリティ内での発見数を計算
+                const foundInRarity = rarityGroups[rarity].filter(item => item !== '`???`').length;
+                const totalInRarity = rarityGroups[rarity].length;
+
+                embed.addFields({ 
+                    name: `${rarity} (${foundInRarity}/${totalInRarity})`, 
+                    value: displayList 
+                });
             }
         });
-
-        if (discoveredCount === 0) {
-            embed.setDescription('まだペットを発見していません。卵を孵化させてみましょう！');
-        }
 
         await interaction.editReply({ embeds: [embed] });
     }
