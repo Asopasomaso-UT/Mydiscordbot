@@ -1,11 +1,10 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const mongoose = require('mongoose');
 const { v4: uuidv4 } = require('uuid');
-const { PET_MASTER } = require('../utils/Pet-data');
+const { PET_MASTER, EVOLUTION_STAGES } = require('../utils/Pet-data'); // EVOLUTION_STAGESをインポート
 
 const DataModel = mongoose.models.QuickData;
 
-// --- 提供されたエンチャント設定 ---
 const ENCHANT_TYPES = {
     'power': { name: 'Power', desc: 'ペット倍率アップ' },
     'secret_agent': { name: 'Secret Agent', desc: 'シークレット確率アップ' },
@@ -54,9 +53,6 @@ module.exports = {
                 .setMaxValue(5)
         ),
 
-    /**
-     * オートコンプリート: ペット名とエンチャント名の両方に対応
-     */
     async autocomplete(interaction) {
         const focusedOption = interaction.options.getFocused(true);
         let choices = [];
@@ -64,7 +60,6 @@ module.exports = {
         if (focusedOption.name === 'pet_name') {
             choices = Object.keys(PET_MASTER);
         } else if (focusedOption.name === 'enchant_type') {
-            // ID（キー）ではなく、表示名（Powerなど）をリストアップ
             choices = Object.values(ENCHANT_TYPES).map(e => e.name);
         }
 
@@ -92,7 +87,6 @@ module.exports = {
         const petInfo = PET_MASTER[petName];
         if (!petInfo) return interaction.editReply(`❌ 「${petName}」が見つかりません。`);
 
-        // エンチャント名の逆引き（表示名からIDを取得）
         const enchantKey = Object.keys(ENCHANT_TYPES).find(key => ENCHANT_TYPES[key].name === enchantName);
         const enchantData = enchantKey ? { type: ENCHANT_TYPES[enchantKey].name, level: enchantLevel } : null;
 
@@ -114,9 +108,36 @@ module.exports = {
                 });
             }
 
+            // --- 図鑑更新ロジック ---
+            const currentDoc = await DataModel.findOne({ id: petKey });
+            const discovered = currentDoc?.value?.discovered || [];
+            
+            // 付与するペットの図鑑用名称 (例: "Golden Slime")
+            const currentEvoTag = EVOLUTION_STAGES[evoLevel].name;
+            const currentFullName = currentEvoTag ? `${currentEvoTag} ${petName}` : petName;
+
+            // 上位段階が登録済みかチェック
+            let alreadyHasHigher = false;
+            for (let lv = evoLevel + 1; lv < EVOLUTION_STAGES.length; lv++) {
+                const higherTag = EVOLUTION_STAGES[lv].name;
+                if (higherTag && discovered.includes(`${higherTag} ${petName}`)) {
+                    alreadyHasHigher = true;
+                    break;
+                }
+            }
+
+            const updateQuery = { 
+                $push: { 'value.pets': { $each: newPets } } 
+            };
+
+            // 上位種が未発見の場合のみ、付与した段階を図鑑に追加
+            if (!alreadyHasHigher) {
+                updateQuery.$addToSet = { 'value.discovered': currentFullName };
+            }
+
             await DataModel.findOneAndUpdate(
                 { id: petKey },
-                { $push: { 'value.pets': { $each: newPets } } },
+                updateQuery,
                 { upsert: true, returnDocument: 'after' }
             );
 
