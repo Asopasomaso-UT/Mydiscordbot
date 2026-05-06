@@ -33,30 +33,20 @@ module.exports = {
             
             let totalMult = 0;
             const equippedListStrings = equippedPets.map(p => {
-                // 1. 基本倍率の取得 (アソパソマソなどの種類倍率 × 進化段階)
                 const baseValue = Number(p.multiplier || 1);
                 const evoMultiplier = Number(EVOLUTION_STAGES[p.evoLevel || 0].multiplier || 1);
                 const baseTotal = baseValue * evoMultiplier;
 
-                // 2. エンチャント倍率の確定 (1.0 = 100%)
                 let bonusFactor = 1.0;
                 if (p.enchant && p.enchant.type) {
                     const type = String(p.enchant.type).toLowerCase();
                     const level = Number(p.enchant.level || 0);
-
-                    if (type === 'mimic') {
-                        // Mimic Lv.5 なら 1.0 + 5.0 = 6倍
-                        bonusFactor += level;
-                    } else if (type === 'power') {
-                        // Power Lv.5 なら 1.0 + 1.0 = 2倍
-                        bonusFactor += (level * 0.2);
-                    }
+                    if (type === 'mimic') bonusFactor += level;
+                    else if (type === 'power') bonusFactor += (level * 0.2);
                 }
 
-                // 3. このペットの最終的な倍率
                 const finalIndividual = baseTotal * bonusFactor;
                 totalMult += finalIndividual;
-
                 return `✅ **${getPetDisplayName(p)}** (x${finalIndividual.toFixed(2)})`;
             });
 
@@ -95,9 +85,6 @@ module.exports = {
             ));
             return { embeds: [embed], components: rows };
         };
-
-        // --- 以下、補助UI (Fusion/Sell) とコレクター ---
-        // (省略せずに全文配置します)
 
         const createFusionInterface = (pets) => {
             const groups = getFusionableGroups(pets);
@@ -149,19 +136,52 @@ module.exports = {
             if (i.customId === 'exec_fusion') {
                 const [pName, pEvo] = i.values[0].split(':');
                 const evo = parseInt(pEvo);
+                const nextEvo = evo + 1;
+                
                 const targets = data.pets.filter(p => p.name === pName && (p.evoLevel || 0) === evo).slice(0, 4);
                 if (targets.length < 4) return;
+                
                 const targetIds = targets.map(t => String(t.petId));
                 const remaining = data.pets.filter(p => !targetIds.includes(String(p.petId)));
-                remaining.push({ ...targets[0], petId: uuidv4(), evoLevel: evo + 1, obtainedAt: Date.now() });
+                remaining.push({ ...targets[0], petId: uuidv4(), evoLevel: nextEvo, obtainedAt: Date.now() });
                 const newEquip = (data.equippedPetIds || []).filter(id => !targetIds.includes(String(id)));
-                const updated = await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining, 'value.equippedPetIds': newEquip } }, { returnDocument: 'after' });
+
+                // --- 図鑑更新のロジック追加 ---[cite: 10]
+                const discovered = data.discovered || [];
+                // 進化後の名前を作成（例：Golden Slime）
+                const nextEvoTag = EVOLUTION_STAGES[nextEvo].name;
+                const nextEvoFullName = nextEvoTag ? `${nextEvoTag} ${pName}` : pName;
+
+                // 上位の段階がすでに埋まっているかチェック
+                let alreadyHasHigher = false;
+                for (let lv = nextEvo + 1; lv < EVOLUTION_STAGES.length; lv++) {
+                    const higherTag = EVOLUTION_STAGES[lv].name;
+                    if (higherTag && discovered.includes(`${higherTag} ${pName}`)) {
+                        alreadyHasHigher = true;
+                        break;
+                    }
+                }
+
+                const updateQuery = {
+                    $set: { 'value.pets': remaining, 'value.equippedPetIds': newEquip }
+                };
+
+                // 上位種が未発見の場合のみ、現在の進化後を図鑑に追加
+                if (!alreadyHasHigher) {
+                    updateQuery.$addToSet = { 'value.discovered': nextEvoFullName };
+                }
+
+                const updated = await DataModel.findOneAndUpdate(
+                    { id: petKey }, 
+                    updateQuery, 
+                    { returnDocument: 'after' }
+                );
                 await interaction.editReply(createFusionInterface(updated.value.pets));
             }
 
             if (i.customId === 'exec_sell') {
                 const remaining = data.pets.filter(p => !i.values.includes(String(p.petId)));
-                const totalGain = data.pets.filter(p => i.values.includes(String(p.petId))).reduce((s, p) => s + 100, 0); // 仮の売却価格
+                const totalGain = data.pets.filter(p => i.values.includes(String(p.petId))).reduce((s, p) => s + 100, 0); 
                 await DataModel.findOneAndUpdate({ id: petKey }, { $set: { 'value.pets': remaining } });
                 await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: totalGain } });
                 const res = await DataModel.findOne({ id: petKey });

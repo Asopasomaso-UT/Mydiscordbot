@@ -34,34 +34,29 @@ module.exports = {
             const eggKey = i.values[0];
             const config = EGG_CONFIG[eggKey];
 
-            // 最新データの再取得
             const latestData = await DataModel.findOne({ id: invKey });
             if ((latestData?.value?.inventory?.[eggKey] || 0) <= 0) return i.update({ content: '卵が足りません。', components: [] });
 
-            // --- 1. エンチャント効果の集計 ---
             const pets = latestData.value.pets || [];
             const equippedIds = (latestData.value.equippedPetIds || []).map(id => String(id));
             const equippedPets = pets.filter(p => equippedIds.includes(String(p.petId)));
 
-            let secretAgentBoost = 0; // シークレット確率アップ
-            let specialHatchLv = 0;   // 進化済み出現
+            let secretAgentBoost = 0;
+            let specialHatchLv = 0;
             
             equippedPets.forEach(p => {
                 if (p.enchant?.type === 'secret_agent') secretAgentBoost += p.enchant.level;
                 if (p.enchant?.type === 'special_hatch') specialHatchLv = Math.max(specialHatchLv, p.enchant.level);
             });
 
-            // --- 2. 抽選フェーズ ---
             let selectedPetName = "";
             let isSecret = false;
 
-            // シークレット判定 (Secret Agent補正: 1Lvにつき+50%アップ)
             const modifiedSecretChance = SECRET_CONFIG.CHANCE * (1 + (secretAgentBoost * 0.5));
             if (Math.random() < modifiedSecretChance) {
                 selectedPetName = SECRET_CONFIG.PETS[Math.floor(Math.random() * SECRET_CONFIG.PETS.length)];
                 isSecret = true;
             } else {
-                // 通常抽選 (Ratesベース)
                 const roll = Math.random() * 100;
                 let cumulative = 0;
                 let targetRarity = "Common";
@@ -73,17 +68,13 @@ module.exports = {
                         break;
                     }
                 }
-                
-                // 決定したレアリティの中からランダムに選出
                 const possiblePets = config.contents.filter(name => PET_MASTER[name].rarity.toLowerCase() === targetRarity.toLowerCase());
                 selectedPetName = possiblePets.length > 0 ? possiblePets[Math.floor(Math.random() * possiblePets.length)] : config.contents[0];
             }
 
-            // --- 3. Special Hatch判定 (1Lvにつき1.5%の確率で進化済みが出る) ---
             let hatchEvoLevel = 0;
             if (specialHatchLv > 0 && !isSecret) {
                 if (Math.random() * 100 < (specialHatchLv * 1.5)) {
-                    // Golden(70%), Shiny(25%), Neon(5%)
                     const evoRoll = Math.random();
                     if (evoRoll < 0.05) hatchEvoLevel = 3;
                     else if (evoRoll < 0.30) hatchEvoLevel = 2;
@@ -102,17 +93,20 @@ module.exports = {
                 obtainedAt: Date.now()
             };
 
+            // 図鑑(discovered)と所持ペットの更新[cite: 7]
             await DataModel.findOneAndUpdate({ id: invKey }, { 
                 $inc: { [`value.inventory.${eggKey}`]: -1 },
-                $push: { 'value.pets': newPet }
+                $push: { 'value.pets': newPet },
+                $addToSet: { 'value.discovered': selectedPetName }
             });
 
             const rarityColors = { 'Common': 'Grey', 'Uncommon': 'Green', 'Rare': 'Blue', 'Epic': 'Purple', 'Legendary': 'Orange', 'Mythic': 'Red', 'Unique': 'Blue', 'Artifact': 'Yellow', 'SECRET': 'LuminousVividPink' };
-            const evoText = hatchEvoLevel > 0 ? ` [${EVOLUTION_STAGES[hatchEvoLevel].name}!!]` : "";
+            // 名前より前にタグを表示[cite: 7]
+            const evoPrefix = hatchEvoLevel > 0 ? `[${EVOLUTION_STAGES[hatchEvoLevel].name}] ` : "";
 
             const embed = new EmbedBuilder()
                 .setTitle(isSecret ? '✨ SECRET DETECTED !! ✨' : '🐣 卵が孵った！')
-                .setDescription(`**${newPet.name}${evoText}** が誕生！\nレアリティ: \`${newPet.rarity}\``)
+                .setDescription(`**${evoPrefix}${newPet.name}** が誕生！\nレアリティ: \`${newPet.rarity}\``)
                 .setColor(rarityColors[newPet.rarity] || 'White');
 
             await i.update({ embeds: [embed], components: [] });
