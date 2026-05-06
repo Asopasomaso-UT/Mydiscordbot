@@ -27,54 +27,83 @@ module.exports = {
 
             embed.addFields({
                 name: `${index + 1}. ${name} × ${item.quantity}`,
-                value: `形式: ${isFixed ? '⚡即決' : '⏳入札'}\n価格: ${formatCoin(item.price)} 💰\n出品者: <@${item.sellerId}>`,
+                value: `形式: ${isFixed ? '⚡即決' : '⏳入札'}\n価格: ${formatCoin(item.price)} 💰\n出品者: ${isSeller ? '**あなた**' : `<@${item.sellerId}>`}`,
                 inline: true
             });
 
-            const btn = new ButtonBuilder()
-                .setCustomId(`auc_${isSeller ? 'cancel' : (isFixed ? 'buy' : 'bid')}_${item.listingId}`)
-                .setLabel(isSeller ? '出品取り下げ' : (isFixed ? '購入' : '入札'))
-                .setStyle(isSeller ? ButtonStyle.Danger : (isFixed ? ButtonStyle.Success : ButtonStyle.Primary));
-            
-            currentRow.addComponents(btn);
+            currentRow.addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`auc_${isSeller ? 'cancel' : (isFixed ? 'buy' : 'bid')}_${item.listingId}`)
+                    .setLabel(isSeller ? '取り下げ' : (isFixed ? '購入' : '入札'))
+                    .setStyle(isSeller ? ButtonStyle.Danger : (isFixed ? ButtonStyle.Success : ButtonStyle.Primary))
+            );
+
             if (currentRow.components.length === 5 || index === items.length - 1) {
                 rows.push(currentRow); currentRow = new ActionRowBuilder();
             }
         });
 
         const response = await interaction.reply({ embeds: [embed], components: rows });
+        
+        // componentTypeを限定せず、ボタン操作を受け取る
         const collector = response.createMessageComponentCollector({ time: 300000 });
 
         collector.on('collect', async (i) => {
             const [_, action, listingId] = i.customId.split('_');
+            
+            // 処理中であることをDiscordに通知（タイムアウト防止）
+            if (action !== 'bid') await i.deferUpdate();
+
             const latest = await DataModel.findOne({ id: auctionKey });
             const item = latest?.value?.items.find(it => it.listingId === listingId);
-            if (!item) return i.reply({ content: '終了した出品です。', ephemeral: true });
+            
+            if (!item) {
+                return i.followUp({ content: 'このアイテムは既に終了しているか、取り下げられています。', ephemeral: true });
+            }
 
             if (action === 'cancel') {
-                // 取り下げ処理：アイテムを返す[cite: 7]
+                // 取り下げ処理：アイテムを返却[cite: 7, 8]
                 await Promise.all([
-                    DataModel.findOneAndUpdate({ id: `pet_data_${guildId}_${userId}` }, { $inc: { [`value.inventory.${item.itemId}`]: item.quantity } }),
-                    DataModel.findOneAndUpdate({ id: auctionKey }, { $pull: { 'value.items': { listingId } } })
+                    DataModel.findOneAndUpdate(
+                        { id: `pet_data_${guildId}_${userId}` }, 
+                        { $inc: { [`value.inventory.${item.itemId}`]: item.quantity } }
+                    ),
+                    DataModel.findOneAndUpdate(
+                        { id: auctionKey }, 
+                        { $pull: { 'value.items': { listingId } } }
+                    )
                 ]);
-                return i.reply({ content: `✅ 出品を取り下げ、アイテムをインベントリに戻しました。`, ephemeral: true });
+
+                return i.followUp({ content: `✅ **${ITEM_MASTER[item.itemId]?.name || item.itemId}** の出品を取り下げました。`, ephemeral: true });
             }
 
             if (action === 'buy') {
-                const money = await DataModel.findOne({ id: `money_${guildId}_${userId}` });
-                if ((money?.value || 0) < item.price) return i.reply({ content: 'コイン不足です。', ephemeral: true });
+                const moneyData = await DataModel.findOne({ id: `money_${guildId}_${userId}` });
+                const currentMoney = moneyData?.value || 0;
 
+                if (currentMoney < item.price) {
+                    return i.followUp({ content: '❌ コインが足りません。', ephemeral: true });
+                }
+
+                // 売買処理[cite: 8]
                 await Promise.all([
                     DataModel.findOneAndUpdate({ id: `money_${guildId}_${userId}` }, { $inc: { value: -item.price } }),
                     DataModel.findOneAndUpdate({ id: `money_${guildId}_${item.sellerId}` }, { $inc: { value: item.price } }),
-                    DataModel.findOneAndUpdate({ id: `total_earned_${guildId}_${item.sellerId}` }, { $inc: { value: item.price } }),
                     DataModel.findOneAndUpdate({ id: `pet_data_${guildId}_${userId}` }, { $inc: { [`value.inventory.${item.itemId}`]: item.quantity } }, { upsert: true }),
                     DataModel.findOneAndUpdate({ id: auctionKey }, { $pull: { 'value.items': { listingId } } })
                 ]);
-                await i.reply(`✅ **${ITEM_MASTER[item.itemId]?.name || item.itemId}** を購入しました！`);
-            } else if (action === 'bid') {
+
+                return i.followUp({ content: `✅ **${ITEM_MASTER[item.itemId]?.name || item.itemId}** を購入しました！`, ephemeral: true });
+            }
+
+            if (action === 'bid') {
                 const modal = new ModalBuilder().setCustomId(`modal_bid_${listingId}`).setTitle('入札');
-                modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('amount').setLabel(`現在価格: ${formatCoin(item.price)}`).setStyle(TextInputStyle.Short)));
+                const input = new TextInputBuilder()
+                    .setCustomId('amount')
+                    .setLabel(`現在価格: ${formatCoin(item.price)}`)
+                    .setPlaceholder('例: 1.5m')
+                    .setStyle(TextInputStyle.Short);
+                modal.addComponents(new ActionRowBuilder().addComponents(input));
                 await i.showModal(modal);
             }
         });
