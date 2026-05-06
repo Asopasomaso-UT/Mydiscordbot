@@ -173,6 +173,23 @@ function getRandomEnchant() {
     }
     return 'power'; // フォールバック
 }
+
+const ITEM_MASTER = {
+    'rare_candy': { name: '🍬 不思議なあめ' },
+    'enchant_shield': { name: '🛡️ エンチャントシールド' },
+    'monday_bread': { name: '🍞 特製チョコパン' },
+    'weekend_charm': { name: '✨ 週末の至高のひととき' },
+    'birthday_cake': { name: '🎂 アソパソの誕生日ケーキ' },
+    'common_egg': { name: '🥚Common Egg' },
+    'Uncommon_egg': { name: '🟢Uncommon Egg' },
+    'Rare_egg': { name: '🔵Rare Egg' },
+    'Legendary_egg': { name: '🟡Legendary Egg' },
+    'Mythic_egg': { name: '🟣Mythic Egg' },
+    'slime_egg': { name: '👽Slime Egg' },
+    'Undertale_egg': { name: '💀Undertale Egg' },
+    'Exotic_egg': { name: '💎Exotic Egg' }
+};
+
 module.exports = { 
     PET_MASTER, 
     EGG_CONFIG, 
@@ -183,5 +200,6 @@ module.exports = {
     ENCHANT_TYPES,
     ENCHANT_UPGRADE,
     ENCHANT_CHANCES,
+    ITEM_MASTER,
     getRandomEnchant 
 };

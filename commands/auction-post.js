@@ -90,7 +90,7 @@ module.exports = {
                            { name: '価格', value: formatCoin(price), inline: true });
 
             await i.update({ embeds: [embed], components: [] });
-            await interaction.channel.send(`📢 **${interaction.user.username}** が **${itemNames[itemId] || itemId}** (${quantity}個) を出品しました！[cite: 4]`);
+            await interaction.channel.send(`📢 **${interaction.user.username}** が **${itemNames[itemId] || itemId}** (${quantity}個) を出品しました！`);
         });
     }
 };
