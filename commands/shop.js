@@ -65,6 +65,7 @@ module.exports = {
         const moneyKey = `money_${guildId}_${userId}`;
         const petKey = `pet_data_${guildId}_${userId}`;
 
+        // データの取得[cite: 7]
         const fetchUserData = async () => {
             const [m, u] = await Promise.all([
                 DataModel.findOne({ id: moneyKey }),
@@ -79,6 +80,7 @@ module.exports = {
 
         let { money: currentMoney, sc: currentSC } = await fetchUserData();
 
+        // ページ生成ロジック[cite: 7]
         const createShopPage = (page, money, sc) => {
             if (page === 0) {
                 const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
@@ -150,6 +152,7 @@ module.exports = {
         collector.on('collect', async (i) => {
             if (i.user.id !== userId) return i.reply({ content: '操作できません', ephemeral: true });
 
+            // ページ切り替え[cite: 7]
             if (i.customId === 'page_normal' || i.customId === 'page_sc') {
                 currentPage = i.customId === 'page_normal' ? 0 : 1;
                 const updated = await fetchUserData();
@@ -157,6 +160,7 @@ module.exports = {
                 return await i.update({ embeds: [next.embed], components: [new ActionRowBuilder().addComponents(next.select), getButtons(currentPage)] });
             }
 
+            // 購入処理[cite: 7, 8]
             if (i.customId === 'shop_buy_normal' || i.customId === 'shop_buy_sc') {
                 const itemId = i.values[0];
                 const isSC = i.customId === 'shop_buy_sc';
@@ -169,27 +173,31 @@ module.exports = {
                     return i.reply({ content: `${isSC ? 'Super Coin' : 'コイン'}が足りません！`, ephemeral: true });
                 }
 
-                // 支払い処理
+                // 支払い処理（所持金のみ減らし、生涯獲得額は維持）[cite: 7]
                 if (isSC) {
                     await DataModel.findOneAndUpdate({ id: petKey }, { $inc: { 'value.superCoin': -item.price } });
                 } else {
                     await DataModel.findOneAndUpdate({ id: moneyKey }, { $inc: { value: -item.price } });
                 }
 
-                // --- 重要：アイテムの付与ロジック ---
-                let resultMessage = `✅ **${item.name || item.label}** を購入しました！`;
+                // アイテム名の特定（undefined対策）
+                const itemName = item.name || item.label || '不明なアイテム';
+                let resultMessage = `✅ **${itemName}** を購入しました！`;
 
+                // 付与ロジック[cite: 7, 8]
                 if (item.type === 'item') {
-                    // 不思議なあめやシールドをインベントリ（pet_data 内）に追加
                     await DataModel.findOneAndUpdate(
                         { id: petKey },
                         { $inc: { [`value.inventory.${itemId}`]: 1 } },
                         { upsert: true }
                     );
                 } else if (item.type === 'egg') {
+                    // Pet-data.js の Egg_key (小文字k) との不一致を修正[cite: 8]
+                    const eggKey = item.Egg_key || item.Egg_Key || itemId; 
                     await DataModel.findOneAndUpdate(
                         { id: petKey },
-                        { $inc: { [`value.inventory.${item.Egg_Key}`]: 1 } }
+                        { $inc: { [`value.inventory.${eggKey}`]: 1 } },
+                        { upsert: true }
                     );
                     resultMessage += `\n\`/hatch-egg\` で孵化させることができます。`;
                 } else if (item.type === 'role') {

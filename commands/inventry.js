@@ -29,7 +29,10 @@ module.exports = {
             // 表示名の変換設定
             const itemNames = {
                 'rare_candy': '🍬 不思議なあめ',
-                'enchant_shield': '🛡️ エンチャントシールド'
+                'enchant_shield': '🛡️ エンチャントシールド',
+                'monday_bread': '🍞 特製チョコパン',
+                'weekend_charm': '✨ 週末の至高のひととき',
+                'birthday_cake': '🎂 アソパソの誕生日ケーキ'
             };
 
             const itemList = Object.entries(inventory)
