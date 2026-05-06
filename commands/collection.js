@@ -1,66 +1,82 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const mongoose = require('mongoose');
 const DataModel = mongoose.models.QuickData;
-const { PET_MASTER } = require('../utils/Pet-data');
-
-// レアリティごとの色設定
-const RARITY_COLORS = {
-    'Common': 0xAAAAAA, 'Uncommon': 0x32CD32, 'Rare': 0x1E90FF, 
-    'Epic': 0x9370DB, 'Legendary': 0xFFD700, 'Mythic': 0xFF4500,
-    'Unique': 0x00FFFF, 'Artifact': 0xFF69B4, 'Secret': 0x000000
-};
+const { PET_MASTER, EVOLUTION_STAGES } = require('../utils/Pet-data');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('collection')
-        .setDescription('ペット図鑑を表示します')
-        .addStringOption(option => 
-            option.setName('rarity')
-                .setDescription('表示するレアリティを選択')
-                .addChoices(
-                    { name: 'Common', value: 'Common' },
-                    { name: 'Uncommon', value: 'Uncommon' },
-                    { name: 'Rare', value: 'Rare' },
-                    { name: 'Epic', value: 'Epic' },
-                    { name: 'Legendary', value: 'Legendary' },
-                    { name: 'Mythic', value: 'Mythic' },
-                    { name: 'Unique', value: 'Unique' },
-                    { name: 'Artifact', value: 'Artifact' },
-                    { name: 'Secret', value: 'Secret' }
-                )),
+        .setDescription('ペット図鑑を表示します'),
 
     async execute(interaction) {
-        const rarity = interaction.options.getString('rarity') || 'Common';
+        await interaction.deferReply();
+
         const guildId = interaction.guild.id;
         const userId = interaction.user.id;
+        const petKey = `pet_data_${guildId}_${userId}`;
 
-        // ユーザーの発見済みデータを取得
-        const userData = await DataModel.findOne({ id: `pet_data_${guildId}_${userId}` });
-        const discovered = userData?.value?.discovered || [];
+        const doc = await DataModel.findOne({ id: petKey });
+        const discovered = doc?.value?.discovered || [];
 
-        // PET_MASTERから該当レアリティを抽出
-        const petsInRarity = Object.entries(PET_MASTER)
-            .filter(([_, data]) => data.rarity === rarity);
+        // マスタデータにある「全ペット種」のリスト
+        const allPetBaseNames = Object.keys(PET_MASTER);
+        const totalCount = allPetBaseNames.length;
 
-        const totalInRarity = petsInRarity.length;
-        const discoveredInRarity = petsInRarity.filter(([name, _]) => discovered.includes(name)).length;
+        // 発見済みの「種（ベース名）」を抽出して重複を排除
+        // 例: ["Slime", "Golden Slime"] があっても "Slime" の1種としてカウント
+        const discoveredBaseNames = new Set();
+        discovered.forEach(fullName => {
+            const baseName = allPetBaseNames.find(bn => fullName.includes(bn));
+            if (baseName) {
+                discoveredBaseNames.add(baseName);
+            }
+        });
+
+        const discoveredCount = discoveredBaseNames.size;
+        const completionRate = ((discoveredCount / totalCount) * 100).toFixed(1);
+
+        // レアリティごとに発見済みの種を分類
+        const categorizedDiscovered = {};
+        discoveredBaseNames.forEach(baseName => {
+            const rarity = PET_MASTER[baseName]?.rarity || 'Unknown';
+            if (!categorizedDiscovered[rarity]) categorizedDiscovered[rarity] = [];
+            
+            // 図鑑に表示する際、その種の中で「最高ランク」のものを表示する
+            const highestEvo = discovered
+                .filter(fn => fn.includes(baseName))
+                .sort((a, b) => {
+                    // EVOLUTION_STAGESの順序に基づいてソート
+                    const getRank = (name) => {
+                        const stage = EVOLUTION_STAGES.find(s => s.name && name.startsWith(s.name));
+                        return stage ? EVOLUTION_STAGES.indexOf(stage) : 0;
+                    };
+                    return getRank(b) - getRank(a);
+                })[0];
+
+            categorizedDiscovered[rarity].push(highestEvo);
+        });
 
         const embed = new EmbedBuilder()
-            .setTitle(`📖 Pet Collection: ${rarity}`)
-            .setColor(RARITY_COLORS[rarity] || 0xFFFFFF)
-            .setDescription(`進捗: **${discoveredInRarity} / ${totalInRarity}** (${Math.floor((discoveredInRarity/totalInRarity)*100) || 0}%)`)
-            .setTimestamp();
+            .setTitle(`📖 ペット図鑑 (${interaction.user.username})`)
+            .setColor('Gold')
+            .setDescription(`種コンプリート率: **${completionRate}%** (${discoveredCount} / ${totalCount})`)
+            .setThumbnail(interaction.user.displayAvatarURL());
 
-        // リスト作成
-        const list = petsInRarity.map(([name, data]) => {
-            const isFound = discovered.includes(name);
-            return isFound 
-                ? `✅ **${name}** (x${data.multiplier})` 
-                : `🔒 **???** (未発見)`;
-        }).join('\n');
+        const rarityOrder = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic', 'Unique', 'Artifact', 'SECRET'];
+        
+        rarityOrder.forEach(rarity => {
+            if (categorizedDiscovered[rarity]) {
+                // 発見済みの名前をリスト化
+                const list = categorizedDiscovered[rarity].join(', ');
+                const displayList = list.length > 1024 ? list.substring(0, 1021) + '...' : list;
+                embed.addFields({ name: `${rarity} (${categorizedDiscovered[rarity].length})`, value: displayList });
+            }
+        });
 
-        embed.addFields({ name: 'ペット一覧', value: list || 'データがありません' });
+        if (discoveredCount === 0) {
+            embed.setDescription('まだペットを発見していません。卵を孵化させてみましょう！');
+        }
 
-        await interaction.reply({ embeds: [embed] });
+        await interaction.editReply({ embeds: [embed] });
     }
 };
