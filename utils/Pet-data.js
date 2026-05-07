@@ -136,7 +136,7 @@ const EGG_CONFIG = {
         contents: ['Spinosaurus', 'Ankylosaurus', 'Giga-Tyrant', 'Dreadnoughtus', 'Ancient Wyvern', 'The Genesis Dragon']
     },
         '3rdanv_egg': {
-        name: '3rd anniversary Egg', price: 30, shopChance: 80,
+        name: '3rd anniversary Egg', price: 300000, shopChance: 80,
         rates: { 'Epic': 40, 'Legendary': 30, 'Mythic': 20, 'Unique': 7, 'Artifact': 2.5, 'Secret': 0.015 },
         contents: ['ひき肉', 'んぽちゃむ', 'グリマス', 'ちぴちゃぱ', 'Sil-Sils', 'アソパソマソ']
     },
@@ -248,6 +248,7 @@ const ITEM_MASTER = {
     'Exotic_egg': { name: '💎Exotic Egg' },
     'ancient_egg': { name: '🦴Ancient Egg' },
     'relic_egg': { name: '🏺Relic Egg' },
+    '3rdanv_egg': { name: '🍰3rd anniversary Egg' },
 };
 
 module.exports = { 

@@ -13,7 +13,8 @@ const EGG_EMOJI = {
     'Mythic_egg': '🟣',
     'slime_egg': '👽',
     'Undertale_egg': '💀',
-    'Exotic_egg': '💎'
+    'Exotic_egg': '💎',
+    '3rdanv_egg': '🍰'
 };
 
 module.exports = {
