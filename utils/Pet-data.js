@@ -21,6 +21,7 @@ const PET_MASTER = {
     'スライムの英雄': { rarity: 'Epic', multiplier: 1.40 },
     'Flowey': { rarity: 'Epic', multiplier: 1.40 },
     'Gargoyle': { rarity: 'Epic', multiplier: 1.40 },
+    'ひき肉': { rarity: 'Epic', multiplier: 1.40 },
     'レジェンドスライム': { rarity: 'Legendary', multiplier: 1.50 },
     'フェニックス': { rarity: 'Legendary', multiplier: 1.50 },
     'ユニコーン': { rarity: 'Legendary', multiplier: 1.50 },
@@ -30,6 +31,7 @@ const PET_MASTER = {
     'グリフィン': { rarity: 'Legendary', multiplier: 1.50 },
     '半魚人': { rarity: 'Legendary', multiplier: 1.50 },
     'ドラゴン': { rarity: 'Legendary', multiplier: 1.50 },
+    'んぽちゃむ': { rarity: 'Legendary', multiplier: 1.50 },
     '神話のスライム': { rarity: 'Mythic', multiplier: 2.00 },
     'バハムート': { rarity: 'Mythic', multiplier: 2.00 },
     'ゼウスの鷲': { rarity: 'Mythic', multiplier: 2.00 },
@@ -39,14 +41,17 @@ const PET_MASTER = {
     '魚人': { rarity: 'Mythic', multiplier: 2.00 },   
     'Undyne': { rarity: 'Mythic', multiplier: 2.00 },
     'ハデス': { rarity: 'Mythic', multiplier: 2.00 },
+    'グリマス': { rarity: 'Mythic', multiplier: 2.00 },
     'ドラクエスライム': { rarity: 'Unique', multiplier: 4.00 },
     '海蛇': { rarity: 'Unique', multiplier: 4.00 },
     'Asgore': { rarity: 'Unique', multiplier: 4.00 },
     '虚無の支配者': { rarity: 'Unique', multiplier: 4.00 },
+    'ちぴちゃぱ': { rarity: 'Unique', multiplier: 4.00 },
     'Minecraft slime': { rarity: 'Artifact', multiplier: 25.00 },
     'シーモンキー': { rarity: 'Artifact', multiplier: 40.00 },
     'Sans': { rarity: 'Artifact', multiplier: 20.00 },
     'Omega flowey': { rarity: 'Artifact', multiplier: 35.00 },
+    'Sil-Sils': { rarity: 'Artifact', multiplier: 30.00 },
     '首無し騎士': { rarity: 'Secret', multiplier: 75.00 },
     'Skibidi toilet': { rarity: 'Secret', multiplier: 80.00 },
     'スマーフキャット': { rarity: 'Secret', multiplier: 105.00 },
@@ -129,6 +134,11 @@ const EGG_CONFIG = {
         name: 'Relic Egg', price: 30, isSuperShop: true,
         rates: { 'Epic': 40, 'Legendary': 30, 'Mythic': 20, 'Unique': 7, 'Artifact': 2.5, 'Secret': 0.015 },
         contents: ['Spinosaurus', 'Ankylosaurus', 'Giga-Tyrant', 'Dreadnoughtus', 'Ancient Wyvern', 'The Genesis Dragon']
+    },
+        '3rdanv_egg': {
+        name: '3rd anniversary Egg', price: 30, shopChance: 80,
+        rates: { 'Epic': 40, 'Legendary': 30, 'Mythic': 20, 'Unique': 7, 'Artifact': 2.5, 'Secret': 0.015 },
+        contents: ['ひき肉', 'んぽちゃむ', 'グリマス', 'ちぴちゃぱ', 'Sil-Sils', 'アソパソマソ']
     },
 };
 
