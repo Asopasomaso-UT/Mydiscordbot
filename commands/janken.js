@@ -27,7 +27,7 @@ module.exports = {
         const { guild, user } = interaction;
         const moneyKey = `money_${guild.id}_${user.id}`;
         const totalEarnedKey = `total_earned_${guild.id}_${user.id}`;
-        const petKey = `pet_data_${guild.id}_${user.id}`;
+        const petKey = `pet_data_${guild.id}_${userId}`; // userId に修正
         const dailyKey = `daily_quest_${guild.id}_${user.id}`;
 
         const petData = await DataModel.findOne({ id: petKey });
@@ -39,19 +39,38 @@ module.exports = {
         const equippedIds = (petData?.value?.equippedPetIds || []).map(id => String(id));
         const equippedPets = pets.filter(p => equippedIds.includes(String(p.petId)));
 
-        // --- ペットの倍率計算 (元のロジックを維持) ---
+        // --- ペットの倍率計算 (エンチャント仕様を復元) ---
         let totalMultiplier = 1.0;
         equippedPets.forEach(p => {
             let mult = p.multiplier || 1.0;
+            
+            // 1. 進化レベルによる補正 (既存仕様)
             if (p.evoLevel === 1) mult *= 1.5;
             if (p.evoLevel === 2) mult *= 2.5;
             if (p.evoLevel === 3) mult *= 5.0;
+
+            // 2. エンチャントによる補正 (復元)
             if (p.enchant) {
-                if (p.enchant.type === 'power') mult *= (1 + (p.enchant.level * 0.1));
-                if (p.enchant.type === 'mimic') mult *= (1 + (p.enchant.level * 0.25));
+                if (p.enchant.type === 'power') {
+                    // Power Lv.1ごとに+10%
+                    mult *= (1 + (p.enchant.level * 0.1));
+                }
+                if (p.enchant.type === 'mimic') {
+                    // Mimic Lv.1ごとに+25% (非常に強力なエンチャント)
+                    mult *= (1 + (p.enchant.level * 0.25));
+                }
             }
+            
+            // 各ペットの増加分 (mult - 1) を合計に加算
             totalMultiplier += (mult - 1);
         });
+
+        // --- パワーポーション(power_potion)の補正を追加 ---
+        const powerBuffEnd = petData?.value?.buffs?.power || 0;
+        const isPowerActive = powerBuffEnd > Date.now();
+        if (isPowerActive) {
+            totalMultiplier *= 1.5; // ポーション効果で最終倍率を1.5倍に
+        }
 
         const choices = ['ぐー', 'ちょき', 'ぱー'];
         const botChoice = choices[Math.floor(Math.random() * 3)];
@@ -74,7 +93,7 @@ module.exports = {
             changeAmount = earnedAmount;
             color = "Gold";
 
-            // --- デイリークエスト進捗加算 (勝利時のみ) ---
+            // デイリークエスト進捗加算 (勝利時)
             await DataModel.findOneAndUpdate(
                 { id: dailyKey },
                 { $inc: { 'value.rps': 1 } },
@@ -105,7 +124,7 @@ module.exports = {
                 `あなたの手: **${userChoice}** | わたしの手: **${botChoice}**`,
                 `━━━━━━━━━━━━━━`,
                 `結果: **${result === 'win' ? '勝ち！' : result === 'draw' ? 'あいこ' : '負け...'}**`,
-                `ペット合計倍率: **x${totalMultiplier.toFixed(2)}**`,
+                `ペット合計倍率: **x${totalMultiplier.toFixed(2)}**${isPowerActive ? ' (💪Potion Active!)' : ''}`,
                 `変動: **${changeAmount >= 0 ? "+" : ""}${formatCoin(changeAmount)}** 💰`,
                 `現在の残高: **${formatCoin(updatedRecord.value || 0)}** 💰`
             ].join('\n'));
