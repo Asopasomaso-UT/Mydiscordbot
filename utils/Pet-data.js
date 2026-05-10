@@ -251,6 +251,17 @@ const ITEM_MASTER = {
     '3rdanv_egg': { name: '🍰3rd anniversary Egg' },
 };
 
+const POTION_CONFIG = {
+    'luck_potion': { name: '🍀Lucky potion', type: 'luck', duration: 15 * 60 * 1000, desc: '卵のレア確率がアップ！' },
+    'power_potion': { name: '💪power potion', type: 'power', duration: 15 * 60 * 1000, desc: 'ペットの倍率が1.5倍！' }
+};
+
+const DAILY_QUESTS = [
+    { id: 'hatch', name: '卵を3回孵化させる', target: 3 },
+    { id: 'massage', name: 'メッセージを10回送信する', target: 3 },
+    { id: 'rps', name: 'じゃんけんで3回勝利する', target: 3 }
+];
+
 module.exports = { 
     PET_MASTER, 
     EGG_CONFIG, 
@@ -262,5 +273,7 @@ module.exports = {
     ENCHANT_UPGRADE,
     ENCHANT_CHANCES,
     ITEM_MASTER,
+    POTION_CONFIG,
+    DAILY_QUESTS,
     getRandomEnchant 
 };
