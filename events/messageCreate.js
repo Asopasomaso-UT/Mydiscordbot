@@ -18,7 +18,7 @@ module.exports = {
 
         if (cooldowns.has(cooldownKey)) return;
 
-        const levelKey = `user_level_${guildId}_${userId}`;
+        const levelKey = `level_data_${guildId}_${userId}`;
         const petKey = `pet_data_${guildId}_${userId}`;
         const [levelData, petData] = await Promise.all([DataModel.findOne({ id: levelKey }), DataModel.findOne({ id: petKey })]);
 

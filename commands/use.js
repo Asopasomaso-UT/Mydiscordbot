@@ -93,7 +93,7 @@ module.exports = {
 
         // --- 不思議なあめ使用処理 (既存ロジック維持) ---
         if (itemKey === 'rare_candy') {
-            const levelKey = `user_level_${guildId}_${userId}`;
+            const levelKey = `level_data_${guildId}_${userId}`;
             const moneyKey = `money_${guildId}_${userId}`;
             const levelDoc = await DataModel.findOne({ id: levelKey });
 
