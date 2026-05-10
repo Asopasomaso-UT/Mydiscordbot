@@ -39,6 +39,7 @@ module.exports = {
         const equippedIds = (petData?.value?.equippedPetIds || []).map(id => String(id));
         const equippedPets = pets.filter(p => equippedIds.includes(String(p.petId)));
 
+        // --- ペットの倍率計算 (元のロジックを維持) ---
         let totalMultiplier = 1.0;
         equippedPets.forEach(p => {
             let mult = p.multiplier || 1.0;
@@ -73,7 +74,7 @@ module.exports = {
             changeAmount = earnedAmount;
             color = "Gold";
 
-            // --- デイリークエスト進捗加算 ---
+            // --- デイリークエスト進捗加算 (勝利時のみ) ---
             await DataModel.findOneAndUpdate(
                 { id: dailyKey },
                 { $inc: { 'value.rps': 1 } },
