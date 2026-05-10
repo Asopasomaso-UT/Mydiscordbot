@@ -25,11 +25,13 @@ module.exports = {
         if (isNaN(bet) || bet <= 0) return await interaction.editReply('無効な賭け金です。');
 
         const { guild, user } = interaction;
-        const moneyKey = `money_${guild.id}_${user.id}`;
-        const totalEarnedKey = `total_earned_${guild.id}_${user.id}`;
-        // userId ではなく user.id を使用するように修正
-        const petKey = `pet_data_${guild.id}_${user.id}`;
-        const dailyKey = `daily_quest_${guild.id}_${user.id}`;
+        const userId = user.id; // ルーレットと同様に変数を定義
+        const guildId = guild.id;
+        
+        const moneyKey = `money_${guildId}_${userId}`;
+        const totalEarnedKey = `total_earned_${guildId}_${userId}`;
+        const petKey = `pet_data_${guildId}_${userId}`;
+        const dailyKey = `daily_quest_${guildId}_${userId}`;
 
         const petData = await DataModel.findOne({ id: petKey });
         const moneyData = await DataModel.findOne({ id: moneyKey });
@@ -40,30 +42,22 @@ module.exports = {
         const equippedIds = (petData?.value?.equippedPetIds || []).map(id => String(id));
         const equippedPets = pets.filter(p => equippedIds.includes(String(p.petId)));
 
-        // --- ペットの倍率計算 ---
+        // --- ペットの倍率計算 (roulette.jsの形を参考に復元) ---
         let totalMultiplier = 1.0;
         equippedPets.forEach(p => {
-            let mult = p.multiplier || 1.0;
-            
-            // 1. 進化レベルによる補正
-            if (p.evoLevel === 1) mult *= 1.5;
-            if (p.evoLevel === 2) mult *= 2.5;
-            if (p.evoLevel === 3) mult *= 5.0;
-
-            // 2. エンチャントによる補正
+            const basePart = Number(p.multiplier || 1) * Number(EVOLUTION_STAGES[p.evoLevel || 0].multiplier || 1);
+            let enchantFactor = 1.0;
             if (p.enchant) {
-                if (p.enchant.type === 'power') {
-                    mult *= (1 + (p.enchant.level * 0.1));
-                }
-                if (p.enchant.type === 'mimic') {
-                    mult *= (1 + (p.enchant.level * 0.25));
-                }
+                const type = String(p.enchant.type).toLowerCase();
+                const lv = Number(p.enchant.level || 0);
+                if (type === 'power') enchantFactor += (lv * 0.2);
+                else if (type === 'mimic') enchantFactor += lv;
             }
-            
-            totalMultiplier += (mult - 1);
+            totalMultiplier += (basePart * enchantFactor);
         });
+        if (totalMultiplier < 1) totalMultiplier = 1.0;
 
-        // --- パワーポーション(power_potion)の1.5倍補正 ---
+        // パワーポーション補正
         const powerBuffEnd = petData?.value?.buffs?.power || 0;
         const isPowerActive = powerBuffEnd > Date.now();
         if (isPowerActive) {
@@ -91,7 +85,7 @@ module.exports = {
             changeAmount = earnedAmount;
             color = "Gold";
 
-            // デイリークエスト進捗加算
+            // デイリークエスト進捗
             await DataModel.findOneAndUpdate(
                 { id: dailyKey },
                 { $inc: { 'value.rps': 1 } },
@@ -122,7 +116,7 @@ module.exports = {
                 `あなたの手: **${userChoice}** | わたしの手: **${botChoice}**`,
                 `━━━━━━━━━━━━━━`,
                 `結果: **${result === 'win' ? '勝ち！' : result === 'draw' ? 'あいこ' : '負け...'}**`,
-                `ペット合計倍率: **x${totalMultiplier.toFixed(2)}**${isPowerActive ? ' (💪Potion Active!)' : ''}`,
+                `ペット合計倍率: **x${totalMultiplier.toFixed(2)}**${isPowerActive ? ' (💪Potion!)' : ''}`,
                 `変動: **${changeAmount >= 0 ? "+" : ""}${formatCoin(changeAmount)}** 💰`,
                 `現在の残高: **${formatCoin(updatedRecord.value || 0)}** 💰`
             ].join('\n'));
