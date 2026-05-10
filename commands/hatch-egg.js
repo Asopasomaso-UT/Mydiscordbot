@@ -10,11 +10,7 @@ module.exports = {
         .setName('hatch-egg')
         .setDescription('持っている卵を孵化させます')
         .addIntegerOption(option => 
-            option.setName('amount')
-                .setDescription('孵化させる個数 (1-10)')
-                .setMinValue(1)
-                .setMaxValue(10)
-        ),
+            option.setName('amount').setDescription('孵化させる個数 (1-10)').setMinValue(1).setMaxValue(10)),
 
     async execute(interaction) {
         const guildId = interaction.guild.id;
@@ -27,28 +23,34 @@ module.exports = {
         const inventory = userData?.value?.inventory || {};
         const myEggs = Object.keys(EGG_CONFIG).filter(key => (inventory[key] || 0) >= amount);
 
-        if (myEggs.length === 0) return interaction.reply({ content: `🥚 卵が足りません（必要数: ${amount}）。`, ephemeral: true });
+        if (myEggs.length === 0) return interaction.reply({ content: `🥚 卵が足りません。`, ephemeral: true });
 
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('hatch_select')
             .setPlaceholder('孵化させる卵を選択')
             .addOptions(myEggs.map(key => ({ label: `${EGG_CONFIG[key].name} (所持: ${inventory[key]})`, value: key })));
 
-        const response = await interaction.reply({ 
-            components: [new ActionRowBuilder().addComponents(selectMenu)], 
-            ephemeral: true 
-        });
-        
+        const response = await interaction.reply({ components: [new ActionRowBuilder().addComponents(selectMenu)], ephemeral: true });
         const collector = response.createMessageComponentCollector({ time: 30000 });
 
         collector.on('collect', async (i) => {
             if (i.customId !== 'hatch_select') return;
             const eggKey = i.values[0];
             const config = EGG_CONFIG[eggKey];
-
-            const latestData = await DataModel.findOne({ id: invKey });
-            const discovered = latestData?.value?.discovered || [];
             
+            // --- バフとエンチャントの計算 ---
+            const isLuckActive = (userData.value?.buffs?.luck || 0) > Date.now();
+            let secretBoost = 0;
+            let specialHatchChance = 0;
+
+            const equippedIds = (userData.value?.equippedPetIds || []).map(id => String(id));
+            const equippedPets = (userData.value?.pets || []).filter(p => equippedIds.includes(String(p.petId)));
+            
+            equippedPets.forEach(p => {
+                if (p.enchant?.type === 'secret_agent') secretBoost += (p.enchant.level * 0.1); // 1Lvごとに+10%
+                if (p.enchant?.type === 'special_hatch') specialHatchChance += (p.enchant.level * 0.05); // 1Lvごとに+5%
+            });
+
             const newPets = [];
             const discoveredToAdd = new Set();
             let resultStrings = [];
@@ -57,8 +59,13 @@ module.exports = {
             for (let k = 0; k < amount; k++) {
                 let selectedPetName = "";
                 let isSecret = false;
+                let hatchEvoLevel = (eggKey === 'ancient_egg' || eggKey === 'relic_egg') ? 1 : 0;
 
-                if (Math.random() < SECRET_CONFIG.CHANCE) {
+                // Secret Agent & Luck Potion 適用
+                let finalSecretChance = SECRET_CONFIG.CHANCE * (1 + secretBoost);
+                if (isLuckActive) finalSecretChance *= 2; 
+
+                if (Math.random() < finalSecretChance) {
                     selectedPetName = SECRET_CONFIG.PETS[Math.floor(Math.random() * SECRET_CONFIG.PETS.length)];
                     isSecret = true;
                     secretFound = true;
@@ -74,25 +81,19 @@ module.exports = {
                     selectedPetName = possiblePets[Math.floor(Math.random() * possiblePets.length)];
                 }
 
+                // Special Hatch 判定 (既に進化済みでない場合のみ)
+                if (hatchEvoLevel === 0 && Math.random() < specialHatchChance) hatchEvoLevel = 1;
+
                 const petInfo = PET_MASTER[selectedPetName];
-                const hatchEvoLevel = 0; // 基礎孵化
                 newPets.push({ 
                     petId: uuidv4(), name: selectedPetName, evoLevel: hatchEvoLevel,
                     rarity: isSecret ? 'SECRET' : petInfo.rarity, multiplier: petInfo.multiplier,
                     level: 1, xp: 0, obtainedAt: Date.now()
                 });
 
-                // 図鑑更新ロジック
-                let alreadyHasHigher = false;
-                for (let lv = hatchEvoLevel + 1; lv < EVOLUTION_STAGES.length; lv++) {
-                    if (discovered.includes(`${EVOLUTION_STAGES[lv].name} ${selectedPetName}`)) {
-                        alreadyHasHigher = true;
-                        break;
-                    }
-                }
-                if (!alreadyHasHigher) discoveredToAdd.add(selectedPetName);
-
-                resultStrings.push(`${isSecret ? '✨ ' : ''}${selectedPetName} (${isSecret ? 'SECRET' : petInfo.rarity})`);
+                const fullName = hatchEvoLevel > 0 ? `${EVOLUTION_STAGES[hatchEvoLevel].name} ${selectedPetName}` : selectedPetName;
+                discoveredToAdd.add(fullName);
+                resultStrings.push(`${isSecret ? '✨ ' : ''}${hatchEvoLevel > 0 ? `[${EVOLUTION_STAGES[hatchEvoLevel].name}] ` : ''}${selectedPetName}`);
             }
 
             await Promise.all([
@@ -108,7 +109,6 @@ module.exports = {
                 .setTitle(secretFound ? '✨ SECRET DETECTED !! ✨' : '🐣 卵が孵った！')
                 .setColor(secretFound ? 'LuminousVividPink' : 'Gold')
                 .setDescription(`**${amount}個** 孵化しました：\n\n${resultStrings.join('\n')}`);
-
             await i.update({ embeds: [embed], components: [] });
         });
     }
