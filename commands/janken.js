@@ -27,7 +27,8 @@ module.exports = {
         const { guild, user } = interaction;
         const moneyKey = `money_${guild.id}_${user.id}`;
         const totalEarnedKey = `total_earned_${guild.id}_${user.id}`;
-        const petKey = `pet_data_${guild.id}_${userId}`; // userId に修正
+        // userId ではなく user.id を使用するように修正
+        const petKey = `pet_data_${guild.id}_${user.id}`;
         const dailyKey = `daily_quest_${guild.id}_${user.id}`;
 
         const petData = await DataModel.findOne({ id: petKey });
@@ -39,37 +40,34 @@ module.exports = {
         const equippedIds = (petData?.value?.equippedPetIds || []).map(id => String(id));
         const equippedPets = pets.filter(p => equippedIds.includes(String(p.petId)));
 
-        // --- ペットの倍率計算 (エンチャント仕様を復元) ---
+        // --- ペットの倍率計算 ---
         let totalMultiplier = 1.0;
         equippedPets.forEach(p => {
             let mult = p.multiplier || 1.0;
             
-            // 1. 進化レベルによる補正 (既存仕様)
+            // 1. 進化レベルによる補正
             if (p.evoLevel === 1) mult *= 1.5;
             if (p.evoLevel === 2) mult *= 2.5;
             if (p.evoLevel === 3) mult *= 5.0;
 
-            // 2. エンチャントによる補正 (復元)
+            // 2. エンチャントによる補正
             if (p.enchant) {
                 if (p.enchant.type === 'power') {
-                    // Power Lv.1ごとに+10%
                     mult *= (1 + (p.enchant.level * 0.1));
                 }
                 if (p.enchant.type === 'mimic') {
-                    // Mimic Lv.1ごとに+25% (非常に強力なエンチャント)
                     mult *= (1 + (p.enchant.level * 0.25));
                 }
             }
             
-            // 各ペットの増加分 (mult - 1) を合計に加算
             totalMultiplier += (mult - 1);
         });
 
-        // --- パワーポーション(power_potion)の補正を追加 ---
+        // --- パワーポーション(power_potion)の1.5倍補正 ---
         const powerBuffEnd = petData?.value?.buffs?.power || 0;
         const isPowerActive = powerBuffEnd > Date.now();
         if (isPowerActive) {
-            totalMultiplier *= 1.5; // ポーション効果で最終倍率を1.5倍に
+            totalMultiplier *= 1.5;
         }
 
         const choices = ['ぐー', 'ちょき', 'ぱー'];
@@ -93,7 +91,7 @@ module.exports = {
             changeAmount = earnedAmount;
             color = "Gold";
 
-            // デイリークエスト進捗加算 (勝利時)
+            // デイリークエスト進捗加算
             await DataModel.findOneAndUpdate(
                 { id: dailyKey },
                 { $inc: { 'value.rps': 1 } },
